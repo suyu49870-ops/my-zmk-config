@@ -3,4 +3,7 @@ if SHIELD_MY_BOARD
 config ZMK_KEYBOARD_NAME
     default "My ZMK Macropad"
 
+config ZMK_USB_LOGGING
+    default y
+
 endif
