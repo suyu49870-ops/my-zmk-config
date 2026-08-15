@@ -2,5 +2,6 @@
 include:
   - board: nice_nano//zmk
     shield: my_board
+    snippet: zmk-usb-logging
   - board: nice_nano//zmk
     shield: settings_reset
