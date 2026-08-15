@@ -2,7 +2,5 @@
 include:
   - board: nice_nano//zmk
     shield: my_board
-    snippet: studio-rpc-usb-uart
-    cmake-args: -DCONFIG_ZMK_STUDIO=y
   - board: nice_nano//zmk
     shield: settings_reset
