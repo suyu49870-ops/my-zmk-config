@@ -6,4 +6,7 @@ config ZMK_KEYBOARD_NAME
 config ZMK_USB_LOGGING
     default y
 
+config CLOCK_CONTROL_NRF_K32SRC_RC
+    default y
+
 endif
