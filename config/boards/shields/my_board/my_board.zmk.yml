@@ -1,0 +1,8 @@
+file_format: "1"
+id: my_board
+name: My 3x3 Macropad
+type: shield
+url: https://zmk.dev/
+requires: [pro_micro]
+features:
+  - keys
