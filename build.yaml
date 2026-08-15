@@ -1,4 +1,4 @@
 # This file generates the build matrix for GitHub Actions
 include:
-  - board: nice_nano_v2
+  - board: nice_nano
     shield: my_board
