@@ -1,6 +1,6 @@
 # This file generates the build matrix for GitHub Actions
 include:
-  - board: nice_nano_v2//zmk
+  - board: nice_nano@2.0.0//zmk
     shield: my_board
-  - board: nice_nano_v2//zmk
+  - board: nice_nano@2.0.0//zmk
     shield: settings_reset
