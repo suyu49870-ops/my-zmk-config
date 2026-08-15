@@ -1,7 +1,7 @@
 # This file generates the build matrix for GitHub Actions
 include:
-  - board: nice_nano_v2//zmk
+  - board: nice_nano_v2
     shield: my_board
     snippet: zmk-usb-logging
-  - board: nice_nano_v2//zmk
+  - board: nice_nano_v2
     shield: settings_reset
