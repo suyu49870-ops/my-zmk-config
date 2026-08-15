@@ -3,10 +3,4 @@ if SHIELD_MY_BOARD
 config ZMK_KEYBOARD_NAME
     default "My ZMK Macropad"
 
-config ZMK_USB_LOGGING
-    default y
-
-config CLOCK_CONTROL_NRF_K32SRC_RC
-    default y
-
 endif
