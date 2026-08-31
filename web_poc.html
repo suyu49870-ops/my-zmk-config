@@ -1,0 +1,2654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZMK Web Configurator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.5/dist/protobuf.min.js">
+
+
+    </script>
+    <script src="protos/bundle.js"></script>
+    <style>
+
+        :root {
+            --bg-base: #0a0a0a;
+            --bg-sidebar: #111111;
+            --bg-panel: #161616;
+            --bg-key: #1c1c1c;
+            --bg-key-hover: #262626;
+            --border-color: #2a2a2a;
+            --accent: #0ea5e9; /* Sky Blue */
+            --accent-hover: #0284c7;
+            --text-main: #f3f4f6;
+            --text-muted: #8b8b8b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            user-select: none;
+            padding-top: 32px;
+        }
+
+        .custom-titlebar {
+            position: absolute; top: 0; left: 0; width: 100%; height: 32px;
+            background: #111; border-bottom: 1px solid #222;
+            display: flex; align-items: center; z-index: 1000;
+            user-select: none;
+        }
+        .titlebar-drag-region {
+            flex: 1; height: 100%; display: flex; align-items: center;
+            -webkit-app-region: drag;
+        }
+        .titlebar-controls {
+            display: flex; height: 100%;
+            -webkit-app-region: no-drag;
+        }
+        .control-btn {
+            width: 46px; height: 100%; display: flex; align-items: center; justify-content: center;
+            color: #ccc; cursor: pointer; transition: 0.1s;
+        }
+        .control-btn:hover { background: rgba(255,255,255,0.1); }
+        .control-btn.close:hover { background: #e81123; color: white; }
+
+        /* Sidebar */
+        .sidebar {
+            width: 200px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 15px 0;
+        }
+        .logo-area {
+            padding: 0 20px 20px;
+            font-size: 1.3rem;
+            font-weight: 900;
+            letter-spacing: 1px;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .nav-item {
+            padding: 12px 20px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-left: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .nav-item:hover { color: var(--text-main); background: rgba(255,255,255,0.03); }
+        .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(14, 165, 233, 0.05); }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* Topbar */
+        .topbar {
+            height: 50px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            background: var(--bg-base);
+        }
+        .device-info { display: flex; align-items: center; gap: 10px; font-weight: bold; font-size: 0.9rem; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 8px #ef4444; transition: all 0.3s;}
+        .status-dot.connected { background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+        .connect-btn { background: #1c1c1c; border: 1px solid var(--border-color); color: var(--text-main); padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .connect-btn:hover { background: #262626; border-color: #444; }
+        #disconnectBtn { background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: #ef4444; display: none; }
+        #disconnectBtn:hover { background: rgba(239, 68, 68, 0.2); }
+
+        /* Workspace */
+        .workspace {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+            padding: 10px; overflow-y: auto; overflow-x: hidden; position: relative; gap: 10px;
+        }
+        .overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(10,10,10,0.8); backdrop-filter: blur(4px); z-index: 10;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.3s;
+        }
+        .workspace.connected .overlay { opacity: 0; pointer-events: none; }
+        .overlay-btn { background: var(--accent); color: #000; font-weight: bold; font-size: 1rem; border: none; padding: 10px 25px; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+        .overlay-btn:hover { background: var(--accent-hover); transform: translateY(-2px); }
+
+        .modal-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(2px); z-index: 50;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+
+        /* Virtual Keyboard Styles */
+        .virtual-keyboard-section {
+            display: flex; flex-direction: column; align-items: center; width: 100%;
+            margin-top: 0px; padding: 10px;
+            background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.3));
+            border-top: 1px solid rgba(255,255,255,0.02);
+            animation: fadeIn 0.5s ease;
+            flex-shrink: 0;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .vk-unified-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%; max-width: 1030px; height: 350px;
+            box-sizing: border-box;
+            padding: 8px 12px; background: #161616;
+            border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.05);
+        }
+        .vk-tabs-container {
+            display: flex; align-items: center; justify-content: flex-start;
+            width: 100%; max-width: 1000px; margin-bottom: 8px;
+            padding: 8px 12px; background: rgba(20, 20, 20, 0.6); backdrop-filter: blur(5px);
+            border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: none;
+            box-sizing: border-box;
+        }
+        .vk-tab-title {
+            color: #fff; font-size: 1rem; font-weight: bold; 
+            border-left: 3px solid var(--accent); padding-left: 10px; margin-right: 20px;
+            white-space: nowrap;
+        }
+        .vk-tabs {
+            display: flex; gap: 8px; flex-wrap: wrap;
+        }
+        .vk-tab {
+            padding: 6px 16px; background: #333; color: #ddd; border-radius: 6px; cursor: pointer;
+            font-size: 0.85rem; font-weight: 500; transition: all 0.2s; border: 1px solid transparent;
+            user-select: none;
+        }
+        .vk-tab:hover { background: #444; }
+        .vk-tab.active {
+            background: var(--accent); color: #000; font-weight: bold; border-color: var(--accent);
+        }
+        
+        .vk-container {
+            display: flex; gap: 10px;
+            padding: 0; background: transparent; border: none; box-shadow: none;
+        }
+        .modifiers-container {
+            display: flex; gap: 15px; margin-bottom: 15px;
+            padding: 10px 15px; background: rgba(20,20,20,0.6); backdrop-filter: blur(5px);
+            border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .mod-checkbox {
+            display: flex; align-items: center; gap: 6px; cursor: pointer;
+            font-size: 0.9rem; font-weight: 600; color: #aaa;
+        }
+        .mod-checkbox input { accent-color: var(--accent); cursor: pointer; }
+        .vk-block { display: flex; flex-direction: column; gap: 6px; }
+        .vk-row { display: flex; gap: 6px; }
+        .vk-row:first-child { margin-bottom: 6px; }
+        .vk-key {
+            height: 40px; min-width: 40px; background: linear-gradient(180deg, #2a2a2a, #1a1a1a);
+            border: 1px solid #111; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.8rem; font-weight: 600; color: #aaa;
+            cursor: pointer; transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.08);
+            user-select: none; position: relative; overflow: hidden;
+        }
+        .vk-key::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(to bottom, rgba(255,255,255,0.05), transparent); pointer-events: none; }
+        .vk-key:hover { background: linear-gradient(180deg, #333, #222); color: #fff; transform: translateY(-1px); box-shadow: 0 6px 10px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.1); }
+        .vk-key:active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,0.6), inset 0 2px 4px rgba(0,0,0,0.5); }
+        .vk-key.pressed {
+            background: linear-gradient(180deg, var(--accent), #0284c7); color: #fff; border-color: #0369a1;
+            box-shadow: 0 0 15px rgba(14, 165, 233, 0.4), inset 0 1px 2px rgba(255,255,255,0.3);
+            transform: translateY(1px);
+        }
+        .vk-container.large-keys {
+            gap: 20px;
+        }
+        .vk-container.large-keys .vk-row {
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .vk-container.large-keys .vk-row:first-child {
+            margin-bottom: 10px;
+        }
+        .vk-container.large-keys .vk-key {
+            height: 60px;
+            min-width: 60px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            flex-direction: column;
+            text-align: center;
+            line-height: 1.2;
+        }
+        .vk-key.selected { 
+            background: linear-gradient(180deg, var(--accent), #0284c7); color: #fff; border-color: #0369a1;
+            box-shadow: 0 0 15px rgba(14, 165, 233, 0.4), inset 0 1px 2px rgba(255,255,255,0.3);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+        
+        .action-bar {
+            background: rgba(20, 20, 20, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 12px 16px; 
+            display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.1);
+            width: 331px;
+            box-sizing: border-box;
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            flex-shrink: 0;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .action-bar.right-side {
+            margin-right: 0;
+            margin-left: 30px;
+        }
+
+        #actionBarWrapper {
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            order: 1;
+        }
+        
+        #actionBarWrapper.right-side {
+            order: 3;
+        }
+        
+        #macropadWrapper {
+            order: 2;
+        }
+
+        .knob-tabs {
+            display: none;
+            gap: 6px;
+            background: rgba(0,0,0,0.3);
+            padding: 4px;
+            border-radius: 8px;
+            margin-bottom: 0px;
+        }
+        #actionBar.knob-mode .knob-tabs {
+            display: flex;
+        }
+        #actionBar.knob-mode .macro-settings {
+            display: none;
+        }
+        .knob-tab {
+            flex: 1;
+            text-align: center;
+            padding: 6px 0;
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #888;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: 0.2s;
+            user-select: none;
+        }
+        .knob-tab:hover {
+            color: #ccc;
+            background: rgba(255,255,255,0.05);
+        }
+        .knob-tab.active {
+            background: rgba(14, 165, 233, 0.15);
+            color: var(--accent);
+        }
+        .action-row { display: flex; justify-content: space-between; align-items: center; }
+        .action-label { color: #888; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.5px; flex-shrink: 0; }
+        .action-section { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+        .macro-settings {
+            display: flex; flex-direction: column; gap: 8px;
+            background: rgba(0, 0, 0, 0.2); padding: 8px 12px; border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.03); animation: fadeIn 0.3s ease;
+            flex-shrink: 0;
+        }
+        .premium-input, .premium-select {
+            background: rgba(255, 255, 255, 0.05); color: #fff; border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px; font-size: 0.8rem; padding: 4px 8px; width: 140px; outline: none; transition: all 0.2s ease;
+        }
+        .premium-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2); background: rgba(255, 255, 255, 0.08); }
+        .premium-select:hover { background: rgba(255, 255, 255, 0.08); cursor: pointer; }
+        .premium-select option { background: #222; color: #fff; }
+        .action-chip { background: #222; padding: 4px 10px; border-radius: 6px; border: 1px solid #333; font-weight: 600; font-size: 0.9rem; color: #eee; }
+        .target-chip-container {
+            flex: 1;
+            min-height: 45px;
+            overflow-y: auto;
+            background: #1a1a1a;
+            border-radius: 8px;
+            border: 1px inset #222;
+            padding: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-content: flex-start;
+        }
+        .mini-chip {
+            background: rgba(14, 165, 233, 0.15);
+            color: var(--accent);
+            border: 1px solid rgba(14, 165, 233, 0.3);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .confirm-btn {
+            background: linear-gradient(135deg, var(--accent), #0369a1); color: #fff;
+            border: none; padding: 10px 24px; border-radius: 20px;
+            font-size: 0.95rem; font-weight: bold; cursor: pointer; transition: 0.2s;
+            box-shadow: 0 4px 10px rgba(14,165,233,0.3), inset 0 1px 1px rgba(255,255,255,0.2);
+        }
+        .confirm-btn:hover { filter: brightness(1.1); box-shadow: 0 6px 15px rgba(14,165,233,0.4); transform: translateY(-1px); }
+        .confirm-btn:active { transform: translateY(1px); box-shadow: 0 2px 5px rgba(14,165,233,0.3); }
+
+        .key.editing {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.5), inset 3px 3px 8px rgba(0,0,0,0.8);
+        }
+        .knob-container.editing .knob {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.5), 0 8px 15px rgba(0,0,0,0.8);
+        }
+
+        /* Top Layout */
+        .top-layout {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            width: 100%;
+            display: flex;
+            gap: 10px;
+        }
+
+        #debug_info {
+            position: fixed;
+            bottom: 5px;
+            right: 5px;
+            font-size: 10px;
+            color: #888;
+            pointer-events: none;
+        }
+
+        .key.active, .key.pressed {
+            transform: translateY(2px) scale(0.98);
+            box-shadow: inset 2px 2px 5px rgba(0,0,0,0.3);
+            background: var(--accent);
+            border-color: #0284c7;
+        }
+        .key.active .key-label, .key.pressed .key-label,
+        .key.active .key-mapping, .key.pressed .key-mapping,
+        .key.active .key-id, .key.pressed .key-id {
+            color: #fff !important;
+            text-shadow: none;
+        }
+        .knob-container.active .knob {
+            transform: scale(0.95);
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.8);
+            border-color: var(--accent);
+        }
+
+        .macropad-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            margin-top: 0px;
+            background: #161616;
+            padding: 12px 15px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.02);
+        }
+        .layer-tabs {
+            display: flex; gap: 8px; flex-wrap: wrap;
+            background: transparent;
+            padding: 0;
+            align-items: center;
+        }
+        .layer-tab {
+            padding: 6px 16px; background: #333; color: #ddd; border-radius: 6px; cursor: pointer;
+            font-size: 0.85rem; font-weight: 500; transition: all 0.2s; border: 1px solid transparent;
+            user-select: none;
+        }
+        .layer-tab:hover { background: #444; color: #ddd; }
+        .layer-tab.active {
+            background: var(--accent); color: #000; font-weight: bold; border-color: var(--accent);
+        }
+
+        .macropad {
+            position: relative;
+            background: transparent;
+            border-radius: 0;
+            box-shadow: none;
+            flex-shrink: 0;
+            z-index: 2;
+        }
+
+        .knob-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            width: 70px;
+            height: 70px;
+        }
+
+        .knob {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #333, #151515);
+            border: 2px solid #0a0a0a;
+            box-shadow: 0 8px 15px rgba(0,0,0,0.8), inset 0 2px 3px rgba(255,255,255,0.15), inset 0 -2px 5px rgba(0,0,0,0.5);
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .knob:active {
+        }
+
+        .knob-arrow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            color: var(--accent);
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            z-index: 10;
+            text-shadow: 0 0 10px var(--accent);
+            font-weight: bold;
+        }
+
+        .key {
+            position: absolute;
+            background: linear-gradient(145deg, #2a2a2a, #181818); 
+            border: 1px solid #111;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #ddd;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.05);
+            transition: all 0.1s;
+            user-select: none;
+        }
+        .key::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border-radius: 6px;
+            box-shadow: inset 0 -2px 5px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        .key:hover { 
+            background: linear-gradient(145deg, #333, #1f1f1f); 
+        }
+        .key:active {
+            box-shadow: inset 4px 4px 8px rgba(0,0,0,0.8), inset -2px -2px 5px rgba(255,255,255,0.02);
+            transform: translateY(2px);
+        }
+        .key-label { 
+            font-size: 1.15rem; 
+            font-weight: bold; 
+            color: var(--text-main); 
+            pointer-events: none; 
+            text-align: center; 
+            line-height: 1.1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 90%;
+            margin-bottom: 4px;
+        }
+        .key-mapping {
+            position: absolute;
+            bottom: 6px;
+            left: 4px;
+            right: 4px;
+            font-size: 0.65rem;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+            pointer-events: none;
+        }
+        .key-id { position: absolute; top: 6px; left: 6px; font-size: 0.75rem; font-weight: bold; color: #aaa; pointer-events: none;}
+
+
+        /* Lighting Workspace */
+        #lightingWorkspace {
+            padding: 30px;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            overflow-y: auto;
+        }
+        .lighting-panel {
+            background: rgba(20, 20, 20, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.1);
+            animation: fadeIn 0.4s ease;
+        }
+        
+        .effect-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            width: 100%;
+            margin-bottom: 25px;
+        }
+        .effect-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .effect-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+        }
+        .effect-card.active {
+            background: rgba(163, 230, 53, 0.15); /* Lime green accent */
+            border-color: #a3e635;
+        }
+        .effect-card.active .effect-name {
+            color: #a3e635;
+            font-weight: 600;
+        }
+        .effect-card.active .effect-icon svg {
+            stroke: #a3e635;
+        }
+        .effect-icon svg {
+            stroke: var(--text-muted);
+            transition: stroke 0.2s;
+        }
+        .effect-name {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-main);
+        }
+
+        .lighting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .lighting-row:last-child {
+            margin-bottom: 0;
+        }
+        .lighting-label {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .premium-slider {
+            -webkit-appearance: none;
+            width: 60%;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            outline: none;
+        }
+        .premium-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
+            transition: transform 0.1s;
+        }
+        .premium-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        .premium-color-picker {
+            -webkit-appearance: none;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            cursor: pointer;
+            background: none;
+            padding: 0;
+        }
+        .premium-color-picker::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        .premium-color-picker::-webkit-color-swatch {
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+        }
+        .effect-selector {
+            width: 60%;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            outline: none;
+        }
+        .effect-selector:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(14,165,233,0.2);
+        }
+
+        /* Effect Help Icon & Animations */
+        .effect-help {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid rgba(255,255,255,0.2);
+            z-index: 2;
+        }
+        .effect-help:hover {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+            transform: scale(1.1);
+        }
+        .effect-help.playing {
+            background: var(--accent);
+            color: #fff;
+            border-color: #fff;
+            box-shadow: 0 0 8px var(--accent);
+        }
+
+        @keyframes animPulse { 0%, 100% { box-shadow: 0 0 2px var(--accent); opacity: 1; } 50% { box-shadow: 0 0 15px var(--accent); opacity: 0.7; } }
+        @keyframes animRotate { 0% { filter: hue-rotate(0deg) drop-shadow(0 0 5px var(--accent)); } 100% { filter: hue-rotate(360deg) drop-shadow(0 0 5px var(--accent)); } }
+        @keyframes animBreathe { 0%, 100% { box-shadow: 0 0 2px var(--accent); filter: brightness(1); } 50% { box-shadow: 0 0 12px var(--accent); filter: brightness(1.3); } }
+        @keyframes animWave { 0%, 100% { box-shadow: 0 0 2px var(--accent); } 50% { box-shadow: 0 0 20px var(--accent); filter: brightness(1.5); } }
+        @keyframes animSweep { 0%, 100% { box-shadow: 0 0 2px var(--accent); opacity: 0.5; } 50% { box-shadow: 0 0 15px var(--accent); opacity: 1; } }
+        @keyframes animHue { 0% { filter: hue-rotate(0deg); box-shadow: 0 0 8px var(--accent); } 100% { filter: hue-rotate(360deg); box-shadow: 0 0 8px var(--accent); } }
+        @keyframes animBlink { 0%, 100% { box-shadow: 0 0 15px var(--accent); opacity: 1; } 50% { box-shadow: 0 0 0px var(--accent); opacity: 0.3; } }
+
+        /* Ensure preview keys and knobs have a base transition and no transforms that mess up layout */
+        .preview-key {
+            transition: all 0.3s ease;
+            border-color: rgba(14, 165, 233, 0.3) !important;
+        }
+        .knob-container.preview-key .knob {
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 15px rgba(0,0,0,0.8), inset 0 2px 3px rgba(255,255,255,0.15), inset 0 -2px 5px rgba(0,0,0,0.5);
+        }
+        /* Pass the animation from the container to the knob itself so it glows */
+        .preview-key[class*="anim-effect-"] {
+            border-color: var(--accent) !important;
+        }
+
+        .anim-effect-0 { opacity: 0.3; box-shadow: none !important; }
+        .anim-effect-1 { animation: animBreathe 3s ease-in-out infinite; }
+        .anim-effect-2 { animation: animPulse 3s ease-in-out infinite; }
+        .anim-effect-3 { animation: animRotate 4s linear infinite; }
+        .anim-effect-4 { animation: animBreathe 1.5s ease-in-out infinite; }
+        .anim-effect-5 { animation: animHue 2s linear infinite; }
+        .anim-effect-6 { animation: animWave 1.5s ease-in-out infinite; }
+        .anim-effect-7 { animation: animBreathe 2.5s ease-in-out infinite; animation-delay: 0.5s; }
+        .anim-effect-8 { animation: animSweep 1s linear infinite; }
+        .anim-effect-9 { animation: animWave 1s ease-in-out infinite; }
+        .anim-effect-10 { animation: animBlink 0.8s steps(2, start) infinite; }
+        .anim-effect-11 { animation: animPulse 1.5s ease-in-out infinite; }
+        .anim-effect-12 { animation: animPulse 0.8s ease-in-out infinite; }
+        .anim-effect-13 { animation: animRotate 2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+        .anim-effect-14 { animation: animSweep 1.5s ease-in-out infinite; }
+        .anim-effect-15 { animation: animBlink 0.3s ease-in-out infinite; }
+        .anim-effect-16 { animation: animBreathe 0.4s ease-in-out infinite; filter: contrast(150%); }
+
+    </style>
+    <script>
+        // Theme Builder Integration
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'update-css-var') {
+                document.documentElement.style.setProperty(event.data.variable, event.data.value);
+            }
+        });
+    </script>
+</head>
+<body>
+    <div class="custom-titlebar">
+        <div class="titlebar-drag-region">
+            <span style="margin-left: 15px; font-size: 0.75rem; font-weight: bold; color: #888;">ZMK Web Configurator - Studio</span>
+        </div>
+        <div class="titlebar-controls">
+            <div class="control-btn minimize" id="btnMinimize">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="12" x2="20" y2="12"></line></svg>
+            </div>
+            <div class="control-btn close" id="btnClose">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="logo-area">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg>
+            ZMK Studio
+        </div>
+        <div class="nav-item active" id="navBasic">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/></svg>
+            按键映射
+        </div>
+        <div class="nav-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            高级宏
+        </div>
+        <div class="nav-item" id="navLighting">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
+            灯效设置
+        </div>
+        <div class="nav-item" id="navSerial">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            串口监视器
+        </div>
+        <div class="nav-item" style="margin-top: auto;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            关于
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="topbar">
+            <div class="device-info">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div class="status-indicator" style="display: flex; align-items: center; gap: 10px;">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span id="statusText">等待连接设备...</span>
+                    </div>
+                        <button class="connect-btn" id="connectBtn">连接 USB 串口</button>
+                        <button class="connect-btn" id="disconnectBtn" style="display: none;">断开连接</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="workspace" id="mainWorkspace">
+            <div class="overlay" id="overlay">
+                <button class="overlay-btn" id="overlayConnectBtn">连接设备</button>
+                <p style="margin-top: 10px; color: var(--text-muted); font-size: 0.85rem;">请使用 USB 数据线连接键盘，并授权串口访问</p>
+            </div>
+
+            <div class="top-layout">
+                <div style="display: flex; justify-content: center; align-items: stretch; width: 100%; margin-bottom: 0px; padding-top: 2px;">
+                    <div id="actionBarWrapper" style="width: 0; overflow: hidden; transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); flex-shrink: 0; position: relative; order: 1;">
+                        <div class="action-bar" id="actionBar">
+                            <div class="knob-tabs" id="knobTabs">
+                                <div class="knob-tab active" onclick="selectKnobTab(0)">顺时针</div>
+                                <div class="knob-tab" onclick="selectKnobTab(1)">逆时针</div>
+                                <div class="knob-tab" onclick="selectKnobTab(2)">按下</div>
+                            </div>
+                            <div class="action-row">
+                                <span class="action-label">当前按键</span>
+                                <span class="action-chip" id="sourceChip">未选择</span>
+                            </div>
+                            
+                            <div class="action-section">
+                                <span class="action-label">映射内容</span>
+                                <div class="target-chip-container" id="targetChip" style="flex: 1;">未选择</div>
+                            </div>
+
+                            <div class="macro-settings" id="macroSettings" style="display: none;">
+                                <div class="action-row">
+                                    <span class="action-label">宏名称</span>
+                                    <input type="text" id="macroNameInput" class="premium-input" placeholder="自定义名称..." maxlength="10">
+                                </div>
+                                <div class="action-row">
+                                    <span class="action-label">触发模式</span>
+                                    <select id="macroModeSelect" class="premium-select">
+                                        <option value="0">同时按下</option>
+                                        <option value="1">顺序打字</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button class="confirm-btn" id="confirmBindingBtn" style="width: 100%; flex-shrink: 0; margin-top: auto;">确定映射</button>
+                        </div>
+                    </div>
+                    
+                    <div class="macropad-wrapper" id="macropadWrapper" style="display: none;">
+                        <div class="vk-tabs-container">
+                            <div class="vk-tab-title">层级设置</div>
+                            <div id="layerTabsContainer" class="layer-tabs"></div>
+                        </div>
+                        <div class="macropad" id="macropad"></div>
+                    </div>
+                </div>
+
+                <div class="virtual-keyboard-section" id="vkSection" style="display: none; padding-top: 5px;">
+                    <div class="vk-unified-container">
+                        <div class="vk-tabs-container">
+                            <div class="vk-tab-title">改键设置</div>
+                            <div class="vk-tabs" id="vkTabs">
+                                <div class="vk-tab active" data-category="basic">基础按键</div>
+                                <div class="vk-tab" data-category="system">系统功能</div>
+                                <div class="vk-tab" data-category="media">网页设置</div>
+                                <div class="vk-tab" data-category="office">文档办工</div>
+                                <div class="vk-tab" data-category="mouse">鼠标键</div>
+                                <div class="vk-tab" data-category="macro">自定义</div>
+                            </div>
+                        </div>
+                        <div class="vk-container" id="vkContainer"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="workspace" id="lightingWorkspace">
+            <h2 style="font-size: 1.4rem; margin-bottom: 20px; text-align: center; color: var(--accent);">高级灯效控制</h2>
+            
+            <div class="lighting-panel">
+                <div style="align-self: flex-start; margin-bottom: 12px; font-weight: 600; color: var(--text-main);">模式</div>
+                
+                                <div class="effect-grid" id="effectGrid">
+                    <div class="effect-card" data-effect="0">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg></div>
+                        <div class="effect-name">关闭</div>
+                    </div>
+                    <div class="effect-card active" data-effect="1">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg></div>
+                        <div class="effect-name">静如止水</div>
+                    </div>
+                    <div class="effect-card" data-effect="2">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 2v6h6M21 12A9 9 0 0 0 6 5.3L3 8M21 22v-6h-6M3 12a9 9 0 0 0 15 6.7l3-2.7"/></svg></div>
+                        <div class="effect-name">晨光微曦</div>
+                    </div>
+                    <div class="effect-card" data-effect="3">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
+                        <div class="effect-name">生生不息</div>
+                    </div>
+                    <div class="effect-card" data-effect="4">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+                        <div class="effect-name">幻彩呼吸</div>
+                    </div>
+                    <div class="effect-card" data-effect="5">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></div>
+                        <div class="effect-name">光谱流转</div>
+                    </div>
+                    <div class="effect-card" data-effect="6">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c2-3 4-3 6 0s4 3 6 0 4-3 6 0"/></svg></div>
+                        <div class="effect-name">随波逐流</div>
+                    </div>
+                    <div class="effect-card" data-effect="7">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></svg></div>
+                        <div class="effect-name">极光弥漫</div>
+                    </div>
+                    <div class="effect-card" data-effect="8">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg></div>
+                        <div class="effect-name">流星赶月</div>
+                    </div>
+                    <div class="effect-card" data-effect="9">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg></div>
+                        <div class="effect-name">灵蛇出洞</div>
+                    </div>
+                    <div class="effect-card" data-effect="10">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M7 7h10M4 17h16"/></svg></div>
+                        <div class="effect-name">赛博扫描</div>
+                    </div>
+                    <div class="effect-card" data-effect="11">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18M6.34 6.34l11.32 11.32M6.34 17.66 17.66 6.34"/></svg></div>
+                        <div class="effect-name">星光点点</div>
+                    </div>
+                    <div class="effect-card" data-effect="12">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+                        <div class="effect-name">心跳律动</div>
+                    </div>
+                    <div class="effect-card" data-effect="13">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M12 12l8.5-8.5M12 12l-8.5 8.5M12 12l8.5 8.5M12 12L3.5 3.5"/></svg></div>
+                        <div class="effect-name">光之审判</div>
+                    </div>
+                    <div class="effect-card" data-effect="14">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>
+                        <div class="effect-name">峰回路转</div>
+                    </div>
+                    <div class="effect-card" data-effect="15">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Zm-9 9 4-4"/></svg></div>
+                        <div class="effect-name">四溅火花</div>
+                    </div>
+                    <div class="effect-card" data-effect="16">
+                        <div class="effect-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m13 2-2 2.5h3L12 22l2-2.5h-3z"/></svg></div>
+                        <div class="effect-name">激光过载</div>
+                    </div>
+                </div>
+                <div class="lighting-row">
+                    <span class="lighting-label">主题颜色</span>
+                    <input type="color" id="lightingColor" class="premium-color-picker" value="#a3e635">
+                </div>
+
+                <div class="lighting-row">
+                    <span class="lighting-label">全局亮度</span>
+                    <input type="range" id="lightingBrightness" class="premium-slider" min="0" max="100" value="80">
+                </div>
+
+                <div class="lighting-row">
+                    <span class="lighting-label">动效速度</span>
+                    <input type="range" id="lightingSpeed" class="premium-slider" min="1" max="5" value="3">
+                </div>
+            </div>
+        </div>
+
+        <div class="workspace" id="serialWorkspace" style="display: none; flex-direction: column; padding: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2 style="font-size: 1.2rem; margin: 0;">串口监视器 (Log)</h2>
+                <div>
+                    <button class="connect-btn" id="connectLogBtn" style="background: #10b981; color: #fff; border-color: #059669;">连接日志串口</button>
+                    <button class="connect-btn" id="disconnectLogBtn" style="display: none; background: #ef4444; color: #fff; border-color: #b91c1c;">断开日志串口</button>
+                    <button class="connect-btn" id="clearLogBtn" style="margin-left: 10px;">清除</button>
+                </div>
+            </div>
+            <textarea id="serialLogOutput" style="flex: 1; width: 100%; background: #111; color: #10b981; font-family: monospace; font-size: 0.9rem; padding: 15px; border: 1px solid #333; border-radius: 8px; resize: none; overflow-y: auto;" readonly placeholder="等待串口数据... (如果启用了 CONFIG_ZMK_USB_LOGGING，请连接第二个 COM 口)"></textarea>
+        </div>
+    </div>
+    
+    <div id="debug_info">[Debug] Waiting...</div>
+
+    <script>
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const overlayConnectBtn = document.getElementById('overlayConnectBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const mainWorkspace = document.getElementById('mainWorkspace');
+        const serialWorkspace = document.getElementById('serialWorkspace');
+        const lightingWorkspace = document.getElementById('lightingWorkspace');
+        const macropad = document.getElementById('macropad');
+        const overlay = document.getElementById('overlay');
+        const navBasic = document.getElementById('navBasic');
+        const navSerial = document.getElementById('navSerial');
+        const navLighting = document.getElementById('navLighting');
+
+        function renderLayerTabs() {
+            const container = document.getElementById('layerTabsContainer');
+            if (!container || !activeKeymap || !activeKeymap.layers) return;
+            
+            container.innerHTML = '';
+            activeKeymap.layers.forEach((layer, idx) => {
+                const tab = document.createElement('div');
+                tab.className = `layer-tab ${idx === activeLayer ? 'active' : ''}`;
+                tab.textContent = `层${idx + 1}`;
+                tab.onclick = () => {
+                    if (activeLayer !== idx) {
+                        activeLayer = idx;
+                        renderLayerTabs();
+                        
+                        // Sync layer switch to hardware
+                        const payload = new Uint8Array([0x00, 0x00, 0xBC, activeLayer, 0xBD]);
+                        if (typeof serialWriter !== 'undefined' && serialWriter) {
+                            serialWriter.write(payload).catch(e => console.error("层级同步失败", e));
+                        }
+                    }
+                    updateKeyLabels();
+                    document.querySelectorAll('.key.editing, .knob-container.editing').forEach(el => el.classList.remove('editing'));
+                    editingKeyIdx = -1;
+                    updateActionBar();
+                };
+                container.appendChild(tab);
+            });
+        }
+
+        navBasic.addEventListener('click', () => {
+            navBasic.classList.add('active');
+            navSerial.classList.remove('active');
+            if (navLighting) navLighting.classList.remove('active');
+            mainWorkspace.style.display = 'flex';
+            serialWorkspace.style.display = 'none';
+            if (lightingWorkspace) lightingWorkspace.style.display = 'none';
+        });
+
+        navSerial.addEventListener('click', () => {
+            navSerial.classList.add('active');
+            navBasic.classList.remove('active');
+            if (navLighting) navLighting.classList.remove('active');
+            mainWorkspace.style.display = 'none';
+            serialWorkspace.style.display = 'flex';
+            if (lightingWorkspace) lightingWorkspace.style.display = 'none';
+        });
+
+        if (navLighting) {
+            navLighting.addEventListener('click', () => {
+                navLighting.classList.add('active');
+                navBasic.classList.remove('active');
+                navSerial.classList.remove('active');
+                mainWorkspace.style.display = 'none';
+                serialWorkspace.style.display = 'none';
+                if (lightingWorkspace) lightingWorkspace.style.display = 'flex';
+            });
+        }
+
+        // Lighting Logic
+        let currentEffect = 1;
+        
+        async function sendLightingCommand() {
+            const colorHex = document.getElementById('lightingColor').value;
+            const brightness = parseInt(document.getElementById('lightingBrightness').value);
+            const speed = parseInt(document.getElementById('lightingSpeed').value);
+            
+            const r = parseInt(colorHex.substring(1, 3), 16);
+            const g = parseInt(colorHex.substring(3, 5), 16);
+            const b = parseInt(colorHex.substring(5, 7), 16);
+            
+            const payload = new Uint8Array([0x00, 0x00, 0xCC, currentEffect, r, g, b, brightness, speed, 0xCD]);
+            
+            if (typeof serialWriter !== 'undefined' && serialWriter) {
+                try {
+                    await serialWriter.write(payload);
+                } catch(e) {
+                    console.error("发送灯效失败", e);
+                }
+            }
+        }
+
+        const effectCards = document.querySelectorAll('.effect-card');
+        effectCards.forEach(card => {
+            // Add help icon dynamically
+            const helpBtn = document.createElement('div');
+            helpBtn.className = 'effect-help';
+            helpBtn.textContent = '?';
+            helpBtn.title = '循环演示光效';
+            card.appendChild(helpBtn);
+
+            helpBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // prevent card click
+                
+                // Show modal
+                const modal = document.getElementById('lightingPreviewModal');
+                const effectName = card.querySelector('.effect-name').textContent;
+                document.getElementById('previewEffectName').textContent = '动效预览: ' + effectName;
+                
+                const effectId = card.getAttribute('data-effect');
+                const previewKeys = document.querySelectorAll('.preview-key');
+                previewKeys.forEach(key => {
+                    key.className = key.className.replace(/anim-effect-\d+/g, '').trim();
+                    key.classList.add(`anim-effect-${effectId}`);
+                    // Add delay to keys for wave/sweep effects to look better
+                    if (effectId === '6' || effectId === '8' || effectId === '9' || effectId === '14') {
+                        const index = Array.from(previewKeys).indexOf(key);
+                        key.style.animationDelay = `${index * 0.1}s`;
+                    } else {
+                        key.style.animationDelay = '0s';
+                    }
+                });
+                
+                modal.style.display = 'flex';
+            });
+
+            card.addEventListener('click', () => {
+                effectCards.forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                currentEffect = parseInt(card.getAttribute('data-effect'));
+                sendLightingCommand();
+            });
+        });
+
+        document.getElementById('lightingColor')?.addEventListener('input', sendLightingCommand);
+        document.getElementById('lightingBrightness')?.addEventListener('input', sendLightingCommand);
+        document.getElementById('lightingSpeed')?.addEventListener('input', sendLightingCommand);
+        
+        let serialPort;
+        let serialWriter;
+        let serialReader;
+        let keepReading = true;
+
+        let zmkStudioMessage;
+        let zmkStudioResponse;
+
+        // --- 1. Init Protobuf ---
+        const root = protobuf.Root.fromJSON(zmkProtoBundle);
+        zmkStudioMessage = root.lookupType("zmk.studio.Request");
+        zmkStudioResponse = root.lookupType("zmk.studio.Response");
+
+        function setStatus(text, isConnected) {
+            statusText.textContent = text;
+            if (isConnected) {
+                statusDot.classList.add('connected');
+                mainWorkspace.classList.add('connected');
+                connectBtn.style.display = 'none';
+                disconnectBtn.style.display = 'inline-block';
+                document.getElementById('vkSection').style.display = 'flex';
+            } else {
+                statusDot.classList.remove('connected');
+                mainWorkspace.classList.remove('connected');
+                connectBtn.style.display = 'inline-block';
+                disconnectBtn.style.display = 'none';
+                document.getElementById('macropadWrapper').style.display = 'none';
+                document.getElementById('vkSection').style.display = 'none';
+            }
+        }
+
+        // --- 1.1 ZMK RPC Framing ---
+        const FRAMING_SOF = 0xAB;
+        const FRAMING_ESC = 0xAC;
+        const FRAMING_EOF = 0xAD;
+
+        function frameData(buffer) {
+            const framed = [FRAMING_SOF];
+            for (let i = 0; i < buffer.length; i++) {
+                const b = buffer[i];
+                if (b === FRAMING_SOF || b === FRAMING_ESC || b === FRAMING_EOF) {
+                    framed.push(FRAMING_ESC);
+                }
+                framed.push(b);
+            }
+            framed.push(FRAMING_EOF);
+            return new Uint8Array(framed);
+        }
+
+        
+        const CODE_TO_ZMK_PARAM = {
+            "WinL": 0x0807000F, "WinD": 0x08070007, "WinE": 0x08070008, "WinI": 0x0807000C,
+            "CtrlShiftEsc": 0x03070029, "WinShiftS": 0x0A070016, "WinV": 0x08070019, "WinX": 0x0807001B,
+            "BrowserBack": 0x04070050, "BrowserForward": 0x0407004F, "BrowserRefresh": 0x0007003E, "BrowserHome": 0x0407004A,
+            "BrowserNewTab": 0x01070017, "BrowserCloseTab": 0x0107001A, "BrowserReopenTab": 0x03070017,
+            "BrowserNextTab": 0x0107002B, "BrowserTab1": 0x0107001E, "BrowserTabLast": 0x01070026,
+            "BrowserFocusAddress": 0x0107000F, "BrowserHardRefresh": 0x0107003E,
+            "BrowserSearch": 0x01070009, "BrowserFavorites": 0x01070007, "BrowserStop": 0x00070029,
+            "ActionCopy": 0x01070006, "ActionPaste": 0x01070019, "ActionCut": 0x0107001B, "ActionUndo": 0x0107001D,
+            "ActionFind": 0x01070009, "ActionReplace": 0x0107000B, "ActionQuickDelete": 0x0107002A,
+            "ActionSelectLeft": 0x02070050, "ActionSelectRight": 0x0207004F, "ActionSelectUp": 0x02070052, "ActionSelectDown": 0x02070051,
+            "ActionSelectWordLeft": 0x03070050, "ActionSelectWordRight": 0x0307004F,
+            "ActionRedo": 0x0107001C, "ActionSelectAll": 0x01070004, "ActionSave": 0x01070016,
+            "MouseLeft": 0x20000001, "MouseMiddle": 0x20000002, "MouseRight": 0x20000003,
+            "MouseUp": 0x20000004, "MouseDown": 0x20000005, "MouseLeftMove": 0x20000006, "MouseRightMove": 0x20000007,
+            "Macro1": 0x30000001, "Macro2": 0x30000002, "Macro3": 0x30000003, "Macro4": 0x30000004,
+            "Macro5": 0x30000005, "Macro6": 0x30000006, "Macro7": 0x30000007, "Macro8": 0x30000008,
+            "KeyA": 0x00070004, "KeyB": 0x00070005, "KeyC": 0x00070006, "KeyD": 0x00070007,
+            "KeyE": 0x00070008, "KeyF": 0x00070009, "KeyG": 0x0007000A, "KeyH": 0x0007000B,
+            "KeyI": 0x0007000C, "KeyJ": 0x0007000D, "KeyK": 0x0007000E, "KeyL": 0x0007000F,
+            "KeyM": 0x00070010, "KeyN": 0x00070011, "KeyO": 0x00070012, "KeyP": 0x00070013,
+            "KeyQ": 0x00070014, "KeyR": 0x00070015, "KeyS": 0x00070016, "KeyT": 0x00070017,
+            "KeyU": 0x00070018, "KeyV": 0x00070019, "KeyW": 0x0007001A, "KeyX": 0x0007001B,
+            "KeyY": 0x0007001C, "KeyZ": 0x0007001D, "Digit1": 0x0007001E, "Digit2": 0x0007001F,
+            "Digit3": 0x00070020, "Digit4": 0x00070021, "Digit5": 0x00070022, "Digit6": 0x00070023,
+            "Digit7": 0x00070024, "Digit8": 0x00070025, "Digit9": 0x00070026, "Digit0": 0x00070027,
+            "Enter": 0x00070028, "Escape": 0x00070029, "Backspace": 0x0007002A, "Tab": 0x0007002B,
+            "Space": 0x0007002C, "Minus": 0x0007002D, "Equal": 0x0007002E, "BracketLeft": 0x0007002F,
+            "BracketRight": 0x00070030, "Backslash": 0x00070031, "Semicolon": 0x00070033, "Quote": 0x00070034,
+            "Backquote": 0x00070035, "Comma": 0x00070036, "Period": 0x00070037, "Slash": 0x00070038,
+            "F1": 0x0007003A, "F2": 0x0007003B, "F3": 0x0007003C, "F4": 0x0007003D,
+            "F5": 0x0007003E, "F6": 0x0007003F, "F7": 0x00070040, "F8": 0x00070041,
+            "F9": 0x00070042, "F10": 0x00070043, "F11": 0x00070044, "F12": 0x00070045,
+            "F24(防穿透空键)": 0x00070073,
+            "ArrowRight": 0x0007004F, "ArrowLeft": 0x00070050, "ArrowDown": 0x00070051, "ArrowUp": 0x00070052,
+            "ControlLeft": 0x000700E0, "ShiftLeft": 0x000700E1, "AltLeft": 0x000700E2, "MetaLeft": 0x000700E3,
+            "ControlRight": 0x000700E4, "ShiftRight": 0x000700E5, "AltRight": 0x000700E6, "MetaRight": 0x000700E7,
+            "AudioVolumeUp": 0x000C00E9, "AudioVolumeDown": 0x000C00EA, "AudioVolumeMute": 0x000C00E2,
+            "BrightnessUp": 0x000C006F, "BrightnessDown": 0x000C0070,
+            "MediaPlayPause": 0x000C00CD, "MediaTrackNext": 0x000C00B5, "MediaTrackPrevious": 0x000C00B6, "MediaStop": 0x000C00B7,
+            "SystemPower": 0x00010081, "SystemSleep": 0x00010082, "SystemWake": 0x00010083,
+            "PrintScreen": 0x00070046, "ScrollLock": 0x00070047, "Pause": 0x00070048,
+            "Insert": 0x00070049, "Home": 0x0007004A, "PageUp": 0x0007004B,
+            "Delete": 0x0007004C, "End": 0x0007004D, "PageDown": 0x0007004E,
+            "NumLock": 0x00070053, "NumpadDivide": 0x00070054, "NumpadMultiply": 0x00070055,
+            "NumpadSubtract": 0x00070056, "NumpadAdd": 0x00070057, "NumpadEnter": 0x00070058,
+            "Numpad1": 0x00070059, "Numpad2": 0x0007005A, "Numpad3": 0x0007005B,
+            "Numpad4": 0x0007005C, "Numpad5": 0x0007005D, "Numpad6": 0x0007005E,
+            "Numpad7": 0x0007005F, "Numpad8": 0x00070060, "Numpad9": 0x00070061,
+            "Numpad0": 0x00070062, "NumpadDecimal": 0x00070063, "ContextMenu": 0x00070065
+        };
+
+        // Populate dropdown map for reference
+        const PARAM_TO_NAME = {};
+        for (const [name, param] of Object.entries(CODE_TO_ZMK_PARAM)) {
+            PARAM_TO_NAME[param] = name;
+        }
+
+        let activeKeymap = null;
+        let activeLayer = 0;
+        let behaviorIdList = [];
+        let currentBehaviorIndex = 0;
+        let saveChangesTimeout = null;
+        let isRpcBusy = false;
+        let dynMacroBehaviorId = -1;
+        let kpBehaviorId = -1;
+        let transBehaviorId = -1; // 记录基础按键行为 ID
+        
+        let selectedVkKeys = [];
+        let knobActionSubIndex = 0; // 0:CW, 1:CCW, 2:Press, 3:Release
+
+        let rxBuffer = [];
+        let isEscaped = false;
+        let inRpcFrame = false;
+        let byteCount = 0;
+        let currentLine = "";
+                function shortenKeyName(n) {
+    if (!n) return '';
+    n = n.replace('Key', '').replace('Digit', '').replace('Arrow', '');
+    if (n === 'Escape') return 'Esc';
+    if (n === 'ControlLeft' || n === 'ControlRight') return 'Ctrl';
+    if (n === 'ShiftLeft' || n === 'ShiftRight') return 'Shift';
+    if (n === 'AltLeft' || n === 'AltRight') return 'Alt';
+    if (n === 'MetaLeft' || n === 'MetaRight' || n === 'GuiLeft' || n === 'GuiRight' || n === 'OSLeft' || n === 'OSRight') return 'Win';
+    if (n === 'Backspace') return 'Bksp';
+    if (n === 'Enter') return 'Ent';
+    if (n === 'Space') return 'Spc';
+    return n;
+}
+
+
+        function updateKeyLabels() {
+            if (!activeKeymap || !activeKeymap.layers || activeKeymap.layers.length === 0) return;
+            const layer = activeKeymap.layers[activeLayer];
+            if (!layer || !layer.bindings) return;
+
+            layer.bindings.forEach((originalBinding, idx) => {
+                let binding = originalBinding;
+                let resolvedLayerIdx = activeLayer;
+
+                if (typeof transBehaviorId !== 'undefined' && transBehaviorId !== -1) {
+                    while (binding && binding.behaviorId === transBehaviorId && resolvedLayerIdx > 0) {
+                        resolvedLayerIdx--;
+                        const lowerLayer = activeKeymap.layers[resolvedLayerIdx];
+                        if (lowerLayer && lowerLayer.bindings) {
+                            binding = lowerLayer.bindings[idx];
+                        }
+                    }
+                }
+
+                const el = document.getElementById(`physical_key_${idx}`);
+                if (el) {
+                    const labelDiv = el.querySelector('.key-label');
+                    const mappingDiv = el.querySelector('.key-mapping');
+                    
+                    if (labelDiv) {
+                        // Check if it's a dynamic macro
+                        if (typeof dynMacroBehaviorId !== 'undefined' && binding.behaviorId === dynMacroBehaviorId) {
+                            const customNames = JSON.parse(localStorage.getItem('zmk_macroCustomNames') || '{}');
+                            const customName = customNames[binding.param1];
+                            labelDiv.textContent = customName ? customName : `宏(K${binding.param1 + 1})`;
+                            labelDiv.style.fontSize = '0.9rem';
+                            labelDiv.style.color = '#f59e0b';
+                            
+                            if (mappingDiv) {
+                                const localMacroMap = JSON.parse(localStorage.getItem('zmk_macroKeyParamsMap') || '{}');
+                                const macroParams = localMacroMap[binding.param1];
+                                if (macroParams && macroParams.length > 0) {
+                                    const labels = macroParams.map(p => shortenKeyName(PARAM_TO_NAME[p])).join(' + ');
+                                    mappingDiv.textContent = labels;
+                                } else {
+                                    labelDiv.textContent = '未配置';
+                                    labelDiv.style.color = '#888';
+                                    mappingDiv.textContent = '';
+                                }
+                            }
+                            return;
+                        }
+
+                        // Normal single key
+                        const baseParam = binding.param1 & 0x00FFFFFF;
+                        const mods = (binding.param1 & 0xFF000000) >>> 24;
+                        
+                        if (baseParam === 0 && mods === 0) {
+                            labelDiv.textContent = '未配置';
+                            labelDiv.style.fontSize = '1.15rem';
+                            labelDiv.style.color = '#888';
+                            if (mappingDiv) mappingDiv.textContent = '';
+                        } else {
+                            let keyName = shortenKeyName(PARAM_TO_NAME[baseParam]) || `0x${baseParam.toString(16)}`;
+                            
+                            labelDiv.textContent = keyName;
+                            labelDiv.style.fontSize = '1.15rem';
+                            
+                            if (resolvedLayerIdx !== activeLayer) {
+                                // This is a fall-through (&trans) from a lower layer
+                                labelDiv.style.color = '#777';
+                                labelDiv.style.opacity = '0.7';
+                            } else {
+                                // explicitly mapped on this layer
+                                labelDiv.style.color = 'var(--text-main)';
+                                labelDiv.style.opacity = '1';
+                            }
+                            
+                            if (mappingDiv) {
+                                let modsText = [];
+                                if (mods & 0x01 || mods & 0x10) modsText.push('Ctrl');
+                                if (mods & 0x02 || mods & 0x20) modsText.push('Shift');
+                                if (mods & 0x04 || mods & 0x40) modsText.push('Alt');
+                                if (mods & 0x08 || mods & 0x80) modsText.push('Win');
+                                if (modsText.length > 0) {
+                                    mappingDiv.textContent = modsText.join(' + ') + ' + ' + keyName;
+                                    labelDiv.textContent = modsText.join('+');
+                                    labelDiv.style.fontSize = '0.9rem';
+                                } else {
+                                    mappingDiv.textContent = '';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+
+        function handleSerialData(data) {
+            byteCount += data.length;
+            let debugEl = document.getElementById('debug_info');
+            if (debugEl) debugEl.textContent = `[Debug] Rx Bytes: ${byteCount}`;
+            
+            let logChunk = "";
+
+            for (let i = 0; i < data.length; i++) {
+                const b = data[i];
+
+                if (isEscaped) {
+                    rxBuffer.push(b);
+                    isEscaped = false;
+                    continue;
+                }
+
+                if (b === FRAMING_SOF) {
+                    inRpcFrame = true;
+                    rxBuffer = [];
+                    continue;
+                }
+
+                if (b === FRAMING_ESC) {
+                    isEscaped = true;
+                    continue;
+                }
+
+                if (b === FRAMING_EOF) {
+                    inRpcFrame = false;
+                    try {
+                        const payload = new Uint8Array(rxBuffer);
+                        const decodedMsg = zmkStudioResponse.decode(payload);
+                        const object = zmkStudioResponse.toObject(decodedMsg, { enums: String, defaults: true });
+
+                        if (object.requestResponse && object.requestResponse.core && object.requestResponse.core.getLockState) {
+                            setStatus(`已连接 (${object.requestResponse.core.getLockState})`, true);
+                            setTimeout(() => fetchPhysicalLayout(), 500);
+                        } else if (object.requestResponse && object.requestResponse.keymap && object.requestResponse.keymap.getPhysicalLayouts) {
+                            setStatus(`已同步物理布局`, true);
+                            renderKeyboard(object.requestResponse.keymap.getPhysicalLayouts);
+                            if (object.requestResponse.keymap) {
+                                activeKeymap = object.requestResponse.keymap;
+                                console.log('[DEBUG] Keymap loaded:', activeKeymap);
+                                renderLayerTabs();
+                                updateKeyLabels();
+                            }
+                            setTimeout(() => fetchKeymap(), 500);
+                        } else if (object.requestResponse && object.requestResponse.keymap && object.requestResponse.keymap.getKeymap) {
+                            activeKeymap = object.requestResponse.keymap.getKeymap;
+                            renderLayerTabs();
+                            setStatus(`按键映射已同步`, true);
+                            
+                            // 推测 kpBehaviorId：键盘中最常用的行为通常是 &kp
+                            if (kpBehaviorId === -1 && activeKeymap.layers) {
+                                let behaviorCounts = {};
+                                activeKeymap.layers.forEach(layer => {
+                                    if (!layer.bindings) return;
+                                    layer.bindings.forEach(binding => {
+                                        let bid = binding.behaviorId !== undefined ? binding.behaviorId : binding.behavior_id;
+                                        if (bid !== undefined) {
+                                            behaviorCounts[bid] = (behaviorCounts[bid] || 0) + 1;
+                                        }
+                                    });
+                                });
+                                let maxCount = 0;
+                                let maxId = -1;
+                                for (let id in behaviorCounts) {
+                                    let parsedId = parseInt(id);
+                                    if (behaviorCounts[id] > maxCount && parsedId !== dynMacroBehaviorId) {
+                                        maxCount = behaviorCounts[id];
+                                        maxId = parsedId;
+                                    }
+                                }
+                                if (maxId !== -1) {
+                                    kpBehaviorId = maxId;
+                                }
+                            }
+                            
+                            updateKeyLabels();
+                            setTimeout(() => fetchBehaviors(), 200);
+                        } else if (object.requestResponse && object.requestResponse.behaviors && object.requestResponse.behaviors.listAllBehaviors) {
+                            // Extract behaviors
+                            let behaviors = object.requestResponse.behaviors.listAllBehaviors.behaviors;
+                            // We need to fetch details for each behavior, but actually we can just rely on the fallback if we don't know the ID.
+                            // Wait, listAllBehaviors only gives local_id! We need to call getBehaviorDetails.
+                            // Let's just fetch details for all behaviors.
+                            behaviorIdList = behaviors;
+                            currentBehaviorIndex = 0;
+                            fetchNextBehaviorDetail();
+                        } else if (object.requestResponse && object.requestResponse.keymap && object.requestResponse.keymap.setLayerBinding) {
+                            setStatus(`按键映射已更新，等待写入...`, true);
+                            isRpcBusy = false;
+                            
+                            // 立即刷新UI，消除视觉上的延迟感
+                            setTimeout(() => fetchKeymap(), 20);
+
+                            if (saveChangesTimeout) clearTimeout(saveChangesTimeout);
+                            saveChangesTimeout = setTimeout(() => {
+                                setStatus(`正在写入存储...`, true);
+                                sendSaveChangesRequest();
+                            }, 1000);
+                        } else if (object.requestResponse && object.requestResponse.behaviors && object.requestResponse.behaviors.getBehaviorDetails) {
+                            let details = object.requestResponse.behaviors.getBehaviorDetails;
+                            let rawName = details.displayName || details.display_name || details.name || "";
+                            let name = rawName.toLowerCase();
+                            console.log(`[DEBUG] Received behavior detail: id=${details.id}, rawName="${rawName}", name="${name}"`);
+                            if (name === "behavior_dynamic_macro" || name.includes("dynamic_macro") || name.includes("dynamic-macro")) {
+                                dynMacroBehaviorId = details.id;
+                                if (kpBehaviorId === details.id) kpBehaviorId = -1; // Fix fallback collision
+                            } else if ((name === "behavior_key_press" || name === "&kp" || name === "kp" || name === "key_press" || name === "key press" || name === "keypress")) {
+                                kpBehaviorId = details.id;
+                            } else if ((name === "behavior_transparent" || name === "&trans" || name === "trans" || name === "transparent")) {
+                                transBehaviorId = details.id;
+                            }
+                            
+                            // 更新 Debug UI
+                            let debugEl = document.getElementById('debug_info');
+                            if (debugEl) debugEl.textContent = `[Debug] MacroID: ${dynMacroBehaviorId} | KP_ID: ${kpBehaviorId}`;
+                            currentBehaviorIndex++;
+                            // 所有行为加载完毕后，重新刷新按键标签（宏键标签需要 dynMacroBehaviorId 才能正确显示）
+                            if (currentBehaviorIndex >= behaviorIdList.length) {
+                                updateKeyLabels();
+                            }
+                            fetchNextBehaviorDetail();
+                        } else if (object.requestResponse && object.requestResponse.keymap && object.requestResponse.keymap.saveChanges) {
+                            isRpcBusy = false;
+                            setStatus(`按键映射已保存到键盘`, true);
+                            setTimeout(() => fetchKeymap(), 200);
+                        } else if (object.requestResponse && object.requestResponse.meta && object.requestResponse.meta.simpleError) {
+                            setStatus(`错误: ${object.requestResponse.meta.simpleError}`, true);
+                        }
+                    } catch (e) {
+                        console.error("Protobuf 解析失败:", e);
+                    }
+                    rxBuffer = [];
+                    continue;
+                }
+
+                if (!inRpcFrame && !isEscaped) {
+                    let char = String.fromCharCode(b);
+                    currentLine += char;
+                    
+                    let pkMatch = currentLine.match(/\[PK:(\d+):(\d+)\]/);
+                    if (pkMatch) {
+                        let pos = parseInt(pkMatch[1]);
+                        let state = parseInt(pkMatch[2]);
+                        let el = document.getElementById(`physical_key_${pos}`);
+                        if (el) {
+                            if (state) el.classList.add('active');
+                            else el.classList.remove('active');
+                        }
+                        currentLine = currentLine.replace(/\[PK:\d+:\d+\]/, "");
+                    }
+                    
+                    let knobMatch = currentLine.match(/\[KNOB:(\d+):([-\d]+)\]/);
+                    if (knobMatch) {
+                        let idx = parseInt(knobMatch[1]);
+                        let val = parseInt(knobMatch[2]);
+                        let el = document.getElementById(`physical_key_${idx === 0 ? 9 : 10}`);
+                        if (el) {
+                            const knob = el.querySelector('.knob');
+                            if (knob) {
+                                let currentRotation = parseInt(knob.getAttribute('data-rotation') || '0');
+                                // 将原本的 18 度减半为 9 度，让视觉旋转更平滑、速度更慢
+                                currentRotation += val > 0 ? 9 : -9;
+                                knob.setAttribute('data-rotation', currentRotation);
+                                let transformStr = `rotate(${currentRotation}deg)`;
+                                if (el.classList.contains('active')) {
+                                    transformStr += ' scale(0.85)';
+                                }
+                                knob.style.transform = transformStr;
+                                
+                                const knobArrow = el.querySelector('.knob-arrow');
+                                if (knobArrow) {
+                                    knobArrow.innerHTML = val > 0 ? '↻' : '↺';
+                                    knobArrow.style.opacity = '1';
+                                    clearTimeout(knobArrow.hideTimeout);
+                                    knobArrow.hideTimeout = setTimeout(() => { knobArrow.style.opacity = '0'; }, 500);
+                                }
+                            }
+                        }
+                        currentLine = currentLine.replace(/\[KNOB:\d+:[-\d]+\]/, "");
+                    }
+
+                    if (char === '\n' || char === '\r') {
+                        currentLine = "";
+                    } else if (currentLine.length > 500) {
+                        currentLine = currentLine.substring(currentLine.length - 200);
+                    }
+
+                    logChunk += char;
+                }
+
+                rxBuffer.push(b);
+            }
+            
+            if (logChunk.length > 0) {
+                let logArea = document.getElementById('serialLogOutput');
+                if (logArea) {
+                    logArea.value += logChunk;
+                    if (logArea.value.length > 20000) {
+                        logArea.value = logArea.value.substring(logArea.value.length - 10000);
+                    }
+                    logArea.scrollTop = logArea.scrollHeight;
+                }
+            }
+        }
+
+        let requestIdCounter = 1;
+        
+        async function sendRpcRequest(subsystem, requestName, requestValue = true) {
+            try {
+                const payload = { requestId: requestIdCounter++ };
+                payload[subsystem] = {};
+                payload[subsystem][requestName] = requestValue;
+                
+                const message = zmkStudioMessage.create(payload);
+                const buffer = zmkStudioMessage.encode(message).finish();
+                const framedBuffer = frameData(buffer);
+                
+                if (serialWriter) {
+                    await serialWriter.write(framedBuffer);
+                }
+            } catch (error) {
+                console.error(`发送 ${requestName} 请求失败:`, error);
+            }
+        }
+
+        async function sendGetLockStateRequest() {
+            setStatus('正在读取锁定状态...', true);
+            await sendRpcRequest('core', 'getLockState');
+        }
+        
+        async function fetchPhysicalLayout() {
+            setStatus('正在读取物理布局...', true);
+            await sendRpcRequest('keymap', 'getPhysicalLayouts');
+        }
+
+        
+        async function fetchKeymap() {
+            setStatus('正在读取按键映射...', true);
+            await sendRpcRequest('keymap', 'getKeymap');
+        }
+
+        async function fetchBehaviors() {
+            setStatus('正在获取行为列表...', true);
+            await sendRpcRequest('behaviors', 'listAllBehaviors');
+        }
+
+        async function fetchNextBehaviorDetail() {
+            if (currentBehaviorIndex < behaviorIdList.length) {
+                let id = behaviorIdList[currentBehaviorIndex];
+                await sendRpcRequest('behaviors', 'getBehaviorDetails', { behaviorId: id });
+            } else {
+                setStatus('所有行为已就绪', true);
+            }
+        }
+
+        function renderKeyboard(physicalLayouts) {
+            macropad.innerHTML = '';
+            macropad.style.display = 'block';
+            document.getElementById('macropadWrapper').style.display = 'flex';
+            
+            const layout = physicalLayouts.layouts[physicalLayouts.activeLayoutIndex || 0];
+            if (!layout || !layout.keys) return;
+
+            // ZMK keys are usually 100x100 for 1U. We scale to make 1U = 80px
+            const SCALE = 0.8;
+            let maxX = 0;
+            let maxY = 0;
+            const PADDING = 0;
+
+            layout.keys.forEach((key, idx) => {
+                const w = (key.width || 100) * SCALE;
+                const h = (key.height || 100) * SCALE;
+                const x = (key.x || 0) * SCALE;
+                const y = (key.y || 0) * SCALE;
+
+                if (x + w > maxX) maxX = x + w;
+                if (y + h > maxY) maxY = y + h;
+
+                // 第 9 和 10 个物理按键是旋钮
+                const isKnob = (idx === 9 || idx === 10);
+
+                if (isKnob) {
+                    const GAP = 10;
+                    const knobContainer = document.createElement('div');
+                    knobContainer.className = 'knob-container';
+                    knobContainer.id = `physical_key_${idx}`;
+                    knobContainer.style.width = (w - GAP) + 'px';
+                    knobContainer.style.height = (h - GAP) + 'px';
+                    knobContainer.style.left = (x + PADDING + GAP/2) + 'px';
+                    knobContainer.style.top = (y + PADDING + GAP/2) + 'px';
+
+                    const knob = document.createElement('div');
+                    knob.className = 'knob';
+                    
+                    const knobArrow = document.createElement('div');
+                    knobArrow.className = 'knob-arrow';
+                    
+                    let rotation = 0;
+                    knobContainer.addEventListener('wheel', (e) => {
+                        e.preventDefault();
+                        const isCW = e.deltaY > 0;
+                        rotation += isCW ? 18 : -18;
+                        knob.setAttribute('data-rotation', rotation);
+                        knob.style.transform = `rotate(${rotation}deg)`;
+                        
+                        knobArrow.innerHTML = isCW ? '↻' : '↺';
+                        knobArrow.style.opacity = '1';
+                        clearTimeout(knobArrow.hideTimeout);
+                        knobArrow.hideTimeout = setTimeout(() => { knobArrow.style.opacity = '0'; }, 500);
+                    });
+                    
+                    knobContainer.addEventListener('click', () => selectPhysicalKey(idx));
+                    knobContainer.appendChild(knob);
+                    knobContainer.appendChild(knobArrow);
+                    macropad.appendChild(knobContainer);
+                } else {
+                    const keyDiv = document.createElement('div');
+                    keyDiv.className = 'key';
+                    keyDiv.id = `physical_key_${idx}`;
+                    const GAP = 10;
+                    keyDiv.style.width = (w - GAP) + 'px';
+                    keyDiv.style.height = (h - GAP) + 'px';
+                    keyDiv.style.left = (x + PADDING + GAP/2) + 'px';
+                    keyDiv.style.top = (y + PADDING + GAP/2) + 'px';
+                    
+                    if (key.r) {
+                        const rx = (key.rx || 0) * SCALE;
+                        const ry = (key.ry || 0) * SCALE;
+                        keyDiv.style.transformOrigin = `${rx}px ${ry}px`;
+                        keyDiv.style.transform = `rotate(${key.r / 100}deg)`;
+                    }
+
+                    keyDiv.innerHTML = `<div class="key-label">K${idx+1}</div><div class="key-mapping"></div><div class="key-id">K${idx+1}</div>`;
+                    
+                    keyDiv.addEventListener('mousedown', () => keyDiv.classList.add('pressed'));
+                    keyDiv.addEventListener('mouseup', () => keyDiv.classList.remove('pressed'));
+                    keyDiv.addEventListener('mouseleave', () => keyDiv.classList.remove('pressed'));
+                    keyDiv.addEventListener('click', () => selectPhysicalKey(idx));
+                    
+                    macropad.appendChild(keyDiv);
+                }
+            });
+
+            const finalWidth = maxX + PADDING * 2;
+            const finalHeight = maxY + PADDING * 2;
+            macropad.style.width = finalWidth + 'px';
+            macropad.style.height = finalHeight + 'px';
+            
+            // Sync action bar height perfectly with the macropad
+            // Removed JS interference that was overriding CSS height
+        }
+
+        async function connectSerial() {
+            if (!navigator.serial) {
+                alert('您的浏览器不支持 Web Serial API。');
+                return;
+            }
+
+            try {
+                setStatus('请求设备...', false);
+                serialPort = await navigator.serial.requestPort();
+
+                setStatus('打开串口...', false);
+                await serialPort.open({ baudRate: 115200 });
+
+                setStatus('已连接，初始化...', true);
+                
+                serialWriter = serialPort.writable.getWriter();
+                keepReading = true;
+                
+                readLoop();
+
+                setTimeout(() => sendGetLockStateRequest(), 500);
+
+            } catch (error) {
+                setStatus('等待连接设备...', false);
+                console.error(error);
+            }
+        }
+
+        async function readLoop() {
+            while (serialPort && serialPort.readable && keepReading) {
+                serialReader = serialPort.readable.getReader();
+                try {
+                    while (true) {
+                        const { value, done } = await serialReader.read();
+                        if (done) break;
+                        if (value) handleSerialData(value);
+                    }
+                } catch (error) {
+                    console.error('读取出错', error);
+                    break;
+                } finally {
+                    serialReader.releaseLock();
+                }
+            }
+        }
+
+        async function disconnectSerial() {
+            if (serialReader) {
+                keepReading = false;
+                await serialReader.cancel();
+            }
+            if (serialWriter) {
+                await serialWriter.close();
+                serialWriter.releaseLock();
+            }
+            if (serialPort) {
+                await serialPort.close();
+                serialPort = null;
+                setStatus('等待连接设备...', false);
+            }
+        }
+
+        connectBtn.addEventListener('click', connectSerial);
+        overlayConnectBtn.addEventListener('click', connectSerial);
+        disconnectBtn.addEventListener('click', disconnectSerial);
+        
+        // --- Macro Logic ---
+        let currentMacroKeys = [];
+        const macroSequence = document.getElementById('macroSequence');
+
+        // 宏序列反查表：{ 物理键索引: [param1, param2, ...] }
+        // 用于在收到宏输出键时，找到对应的物理键并触发高亮
+        const macroKeyParamsMap = JSON.parse(localStorage.getItem('zmk_macroKeyParamsMap') || '{}');
+        // 宏键高亮防抖计时器
+        function getParamWithModifiers() {
+            return selectedVkParam;
+        }
+
+        // --- Key Editing Logic (Virtual Keyboard) ---
+        let editingKeyIdx = -1;
+        let selectedVkParam = null;
+        
+        const actionBar = document.getElementById('actionBar');
+        const sourceChip = document.getElementById('sourceChip');
+        const targetChip = document.getElementById('targetChip');
+        const confirmBtn = document.getElementById('confirmBindingBtn');
+        
+
+        const VK_MAIN = [
+            [ { code: 'Escape', label: 'Esc' }, { spacer: true, width: 1 }, { code: 'F1', label: 'F1' }, { code: 'F2', label: 'F2' }, { code: 'F3', label: 'F3' }, { code: 'F4', label: 'F4' }, { spacer: true, width: 0.5 }, { code: 'F5', label: 'F5' }, { code: 'F6', label: 'F6' }, { code: 'F7', label: 'F7' }, { code: 'F8', label: 'F8' }, { spacer: true, width: 0.5 }, { code: 'F9', label: 'F9' }, { code: 'F10', label: 'F10' }, { code: 'F11', label: 'F11' }, { code: 'F12', label: 'F12' } ],
+            [ { code: 'Backquote', label: '`~' }, { code: 'Digit1', label: '1!' }, { code: 'Digit2', label: '2@' }, { code: 'Digit3', label: '3#' }, { code: 'Digit4', label: '4$' }, { code: 'Digit5', label: '5%' }, { code: 'Digit6', label: '6^' }, { code: 'Digit7', label: '7&' }, { code: 'Digit8', label: '8*' }, { code: 'Digit9', label: '9(' }, { code: 'Digit0', label: '0)' }, { code: 'Minus', label: '-_' }, { code: 'Equal', label: '=+' }, { code: 'Backspace', label: 'Backspace', width: 2 } ],
+            [ { code: 'Tab', label: 'Tab', width: 1.5 }, { code: 'KeyQ', label: 'Q' }, { code: 'KeyW', label: 'W' }, { code: 'KeyE', label: 'E' }, { code: 'KeyR', label: 'R' }, { code: 'KeyT', label: 'T' }, { code: 'KeyY', label: 'Y' }, { code: 'KeyU', label: 'U' }, { code: 'KeyI', label: 'I' }, { code: 'KeyO', label: 'O' }, { code: 'KeyP', label: 'P' }, { code: 'BracketLeft', label: '[{' }, { code: 'BracketRight', label: ']}' }, { code: 'Backslash', label: '\\|', width: 1.5 } ],
+            [ { code: 'Caps', label: 'Caps', width: 1.75 }, { code: 'KeyA', label: 'A' }, { code: 'KeyS', label: 'S' }, { code: 'KeyD', label: 'D' }, { code: 'KeyF', label: 'F' }, { code: 'KeyG', label: 'G' }, { code: 'KeyH', label: 'H' }, { code: 'KeyJ', label: 'J' }, { code: 'KeyK', label: 'K' }, { code: 'KeyL', label: 'L' }, { code: 'Semicolon', label: ';:' }, { code: 'Quote', label: '\'"' }, { code: 'Enter', label: 'Enter', width: 2.25 } ],
+            [ { code: 'ShiftLeft', label: 'Shift', width: 2.25 }, { code: 'KeyZ', label: 'Z' }, { code: 'KeyX', label: 'X' }, { code: 'KeyC', label: 'C' }, { code: 'KeyV', label: 'V' }, { code: 'KeyB', label: 'B' }, { code: 'KeyN', label: 'N' }, { code: 'KeyM', label: 'M' }, { code: 'Comma', label: ',<' }, { code: 'Period', label: '.>' }, { code: 'Slash', label: '/?' }, { code: 'ShiftRight', label: 'Shift', width: 2.75 } ],
+            [ { code: 'ControlLeft', label: 'Ctrl', width: 1.25 }, { code: 'MetaLeft', label: 'Win', width: 1.25 }, { code: 'AltLeft', label: 'Alt', width: 1.25 }, { code: 'Space', label: 'Space', width: 6.25 }, { code: 'AltRight', label: 'Alt', width: 1.25 }, { code: 'MetaRight', label: 'Win', width: 1.25 }, { code: 'ContextMenu', label: 'Menu', width: 1.25 }, { code: 'ControlRight', label: 'Ctrl', width: 1.25 } ]
+        ];
+
+        const VK_NAV = [
+            [ { code: 'PrintScreen', label: 'PrtSc' }, { code: 'ScrollLock', label: 'ScrLk' }, { code: 'Pause', label: 'Pause' } ],
+            [ { code: 'Insert', label: 'Ins' }, { code: 'Home', label: 'Home' }, { code: 'PageUp', label: 'PgUp' } ],
+            [ { code: 'Delete', label: 'Del' }, { code: 'End', label: 'End' }, { code: 'PageDown', label: 'PgDn' } ],
+            [ { spacer: true, height: 1 } ],
+            [ { spacer: true, width: 1 }, { code: 'ArrowUp', label: '↑' }, { spacer: true, width: 1 } ],
+            [ { code: 'ArrowLeft', label: '←' }, { code: 'ArrowDown', label: '↓' }, { code: 'ArrowRight', label: '→' } ]
+        ];
+
+        const VK_NUM = [
+            [ { spacer: true, height: 1 } ],
+            [ { code: 'NumLock', label: 'NumLk' }, { code: 'NumpadDivide', label: '/' }, { code: 'NumpadMultiply', label: '*' }, { code: 'NumpadSubtract', label: '-' } ],
+            [ { code: 'Numpad7', label: '7' }, { code: 'Numpad8', label: '8' }, { code: 'Numpad9', label: '9' }, { code: 'NumpadAdd', label: '+' } ],
+            [ { code: 'Numpad4', label: '4' }, { code: 'Numpad5', label: '5' }, { code: 'Numpad6', label: '6' }, { spacer: true, width: 1 } ],
+            [ { code: 'Numpad1', label: '1' }, { code: 'Numpad2', label: '2' }, { code: 'Numpad3', label: '3' }, { code: 'NumpadEnter', label: 'Enter' } ],
+            [ { code: 'Numpad0', label: '0', width: 2 }, { code: 'NumpadDecimal', label: '.' }, { spacer: true, width: 1 } ]
+        ];
+
+        function createBlock(layout, isLarge = false) {
+            const block = document.createElement('div');
+            block.className = 'vk-block';
+            layout.forEach(row => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'vk-row';
+                const baseWidth = isLarge ? 60 : 40;
+                const gap = isLarge ? 10 : 6;
+                row.forEach(key => {
+                    if (key.spacer) {
+                        const spacer = document.createElement('div');
+                        const w = key.width || 1;
+                        spacer.style.width = `calc(${w * baseWidth}px + ${(w - 1) * gap}px)`;
+                        if (key.height) spacer.style.height = `calc(${key.height * baseWidth}px + ${(key.height - 1) * gap}px)`;
+                        rowDiv.appendChild(spacer);
+                        return;
+                    }
+
+                    const btn = document.createElement('div');
+                    btn.className = 'vk-key';
+                    const w = key.width || 1;
+                    if (!isLarge || w > 1) btn.style.width = `calc(${w * baseWidth}px + ${(w - 1) * gap}px)`; else btn.style.minWidth = `calc(${w * baseWidth}px + ${(w - 1) * gap}px)`;
+                    if (key.label && key.label.includes('(')) {
+                        const parts = key.label.split('(');
+                        const topText = parts[0];
+                        const bottomText = parts[1].replace(')', '');
+                        btn.innerHTML = `<span style="font-size: 0.75rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -0.5px;">${topText}</span><span style="font-size: 0.55rem; opacity: 0.7; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; letter-spacing: -0.5px;">${bottomText}</span>`;
+                    } else {
+                        btn.textContent = key.label || '';
+                    }
+                    
+                    const param = CODE_TO_ZMK_PARAM[key.code];
+                    if (param !== undefined) {
+                        btn.dataset.param = param;
+                        btn.addEventListener('click', () => selectVkKey(param, btn, key.label));
+                    }
+                    
+                    rowDiv.appendChild(btn);
+                });
+                block.appendChild(rowDiv);
+            });
+            return block;
+        }
+
+        const VK_SYS = [
+            [ 
+                { code: 'WinL', label: '快速锁屏(Win+L)' }, { code: 'WinD', label: '显示桌面(Win+D)' }, { code: 'WinE', label: '打开电脑(Win+E)' }, 
+                { code: 'WinI', label: '系统设置(Win+I)' }, { code: 'CtrlShiftEsc', label: '任务管理(Ctrl+Shift+Esc)' }, { code: 'WinShiftS', label: '屏幕截图(Win+Shift+S)' }, 
+                { code: 'WinV', label: '剪贴板(Win+V)' }, { code: 'WinX', label: '高级菜单(Win+X)' },
+                { code: 'BrightnessUp', label: '亮度+(Bri+)' }, { code: 'BrightnessDown', label: '亮度-(Bri-)' }, 
+                { code: 'AudioVolumeUp', label: '音量+(Vol+)' }, { code: 'AudioVolumeDown', label: '音量-(Vol-)' }, { code: 'AudioVolumeMute', label: '静音(Mute)' }
+            ]
+        ];
+
+        const VK_MEDIA = [
+            [ { code: 'BrowserNewTab', label: '新建标签(Ctrl+T)' }, { code: 'BrowserCloseTab', label: '关闭标签(Ctrl+W)' }, { code: 'BrowserReopenTab', label: '恢复标签(Ctrl+Shift+T)' }, { code: 'BrowserNextTab', label: '下个标签(Ctrl+Tab)' }, { code: 'BrowserTab1', label: '首个标签(Ctrl+1)' }, { code: 'BrowserTabLast', label: '末尾标签(Ctrl+9)' }, { code: 'BrowserBack', label: '后退(Alt+←)' }, { code: 'BrowserForward', label: '前进(Alt+→)' }, { code: 'BrowserRefresh', label: '刷新网页(F5)' }, { code: 'BrowserHardRefresh', label: '强制刷新(Ctrl+F5)' }, { code: 'BrowserHome', label: '主页(Alt+Home)' }, { code: 'BrowserFocusAddress', label: '选中地址(Ctrl+L)' }, { code: 'BrowserSearch', label: '搜索(Ctrl+F)' }, { code: 'BrowserFavorites', label: '收藏(Ctrl+D)' }, { code: 'BrowserStop', label: '停止(Esc)' } ]
+        ];
+
+        const VK_OFFICE = [
+            [ 
+                { code: 'ActionCopy', label: '复制(Ctrl+C)' }, { code: 'ActionCut', label: '剪切(Ctrl+X)' }, { code: 'ActionPaste', label: '粘贴(Ctrl+V)' }, 
+                { code: 'ActionUndo', label: '撤销(Ctrl+Z)' }, { code: 'ActionRedo', label: '重做(Ctrl+Y)' }, 
+                { code: 'ActionSelectAll', label: '全选(Ctrl+A)' }, { code: 'ActionSave', label: '保存(Ctrl+S)' },
+                { code: 'ActionFind', label: '查找(Ctrl+F)' }, { code: 'ActionReplace', label: '替换(Ctrl+H)' },
+                { code: 'ActionQuickDelete', label: '删词(Ctrl+BS)' },
+                { code: 'ActionSelectLeft', label: '选左字(Shift+←)' }, { code: 'ActionSelectRight', label: '选右字(Shift+→)' },
+                { code: 'ActionSelectUp', label: '选上行(Shift+↑)' }, { code: 'ActionSelectDown', label: '选下行(Shift+↓)' },
+                { code: 'ActionSelectWordLeft', label: '选左词(Ctrl+Shift+←)' }, { code: 'ActionSelectWordRight', label: '选右词(Ctrl+Shift+→)' }
+            ]
+        ];
+
+        let currentVkCategory = 'basic';
+
+const vkContainer = document.getElementById('vkContainer');
+        function renderVirtualKeyboard() {
+            vkContainer.innerHTML = '';
+            if (currentVkCategory === 'basic') {
+                vkContainer.classList.remove('large-keys');
+                vkContainer.appendChild(createBlock(VK_MAIN));
+                vkContainer.appendChild(createBlock(VK_NAV));
+                vkContainer.appendChild(createBlock(VK_NUM));
+            } else if (currentVkCategory === 'system') {
+                vkContainer.classList.add('large-keys');
+                vkContainer.appendChild(createBlock(VK_SYS, true));
+            } else if (currentVkCategory === 'media') {
+                vkContainer.classList.add('large-keys');
+                vkContainer.appendChild(createBlock(VK_MEDIA, true));
+            } else if (currentVkCategory === 'office') {
+                vkContainer.classList.add('large-keys');
+                vkContainer.appendChild(createBlock(VK_OFFICE, true));
+            } else {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.style.color = '#888';
+                emptyMsg.style.padding = '20px';
+                emptyMsg.innerText = '此分类暂未配置按键...';
+                vkContainer.appendChild(emptyMsg);
+            }
+            
+            // Re-bind click events for new elements (REMOVED: createBlock already adds them via addEventListener, re-adding causes double click execution)
+            
+            // Restore selection state
+            selectedVkKeys.forEach(k => {
+                const el = vkContainer.querySelector(`.vk-key[data-param="${k.param}"]`);
+                if (el) el.classList.add('selected');
+            });
+        }
+        
+        document.querySelectorAll('.vk-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                document.querySelectorAll('.vk-tab').forEach(t => t.classList.remove('active'));
+                e.target.classList.add('active');
+                currentVkCategory = e.target.getAttribute('data-category');
+                renderVirtualKeyboard();
+            });
+        });
+
+        renderVirtualKeyboard();
+
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const code = e.code || e.key;
+            let targetKnobIdx = -1;
+            let isPress = false;
+            let rotationDelta = 0;
+            let isRotation = false;
+
+            let param = CODE_TO_ZMK_PARAM[code];
+            
+            if (code === "AudioVolumeUp" || code === "VolumeUp") { targetKnobIdx = 9; isRotation = true; rotationDelta = 18; }
+            if (code === "AudioVolumeDown" || code === "VolumeDown") { targetKnobIdx = 9; isRotation = true; rotationDelta = -18; }
+            if (code === "PageUp") { targetKnobIdx = 10; isRotation = true; rotationDelta = -18; }
+            if (code === "PageDown") { targetKnobIdx = 10; isRotation = true; rotationDelta = 18; }
+
+            if (param !== undefined) {
+                // 在全键盘面板中寻找对应的按键并点亮
+                const vkKeys = document.querySelectorAll(`.vk-key[data-param="${param}"]`);
+                vkKeys.forEach(vk => vk.classList.add('pressed'));
+            }
+            // ---------------------------------------------
+
+            if (param !== undefined && activeKeymap && activeKeymap.layers && activeKeymap.layers.length > 0) {
+                const layer = activeKeymap.layers[activeLayer];
+                if (layer && layer.bindings) {
+                    if (layer.bindings[9] && (layer.bindings[9].param1 === param || layer.bindings[9].param2 === param)) {
+                        targetKnobIdx = 9;
+                        isPress = true;
+                    }
+                    if (layer.bindings[10] && (layer.bindings[10].param1 === param || layer.bindings[10].param2 === param)) {
+                        targetKnobIdx = 10;
+                        isPress = true;
+                    }
+                }
+            }
+
+            if (targetKnobIdx === -1) return;
+
+            if (targetKnobIdx !== -1) {
+                const el = document.getElementById(`physical_key_${targetKnobIdx}`);
+                if (el) {
+                    const knob = el.querySelector('.knob');
+                    if (knob) {
+                        let currentRotation = parseInt(knob.getAttribute('data-rotation') || '0');
+                        if (isRotation) {
+                            currentRotation += rotationDelta;
+                            knob.setAttribute('data-rotation', currentRotation);
+                        }
+                        // 如果同时有旋转和按下（比如按住旋转），先旋转再缩放
+                        let transformStr = `rotate(${currentRotation}deg)`;
+                        if (isPress || knob.classList.contains('knob-pressed')) {
+                            transformStr += ' scale(0.85)';
+                        }
+                        if (isPress) {
+                            knob.classList.add('knob-pressed');
+                            // 给底座也加一点效果
+                            el.classList.add('pressed');
+                        }
+                        knob.style.transform = transformStr;
+                    }
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const code = e.code || e.key;
+            
+            let targetKnobIdx = -1;
+
+            const param = CODE_TO_ZMK_PARAM[code];
+            
+            // --- 全键盘 (Virtual Keyboard) 按键释放联动 ---
+            if (param !== undefined) {
+                const vkKeys = document.querySelectorAll(`.vk-key[data-param="${param}"]`);
+                vkKeys.forEach(vk => vk.classList.remove('pressed'));
+            }
+            // ---------------------------------------------
+
+            if (param !== undefined && activeKeymap && activeKeymap.layers && activeKeymap.layers.length > 0) {
+                const layer = activeKeymap.layers[activeLayer];
+                if (layer && layer.bindings) {
+                    if (layer.bindings[9] && (layer.bindings[9].param1 === param || layer.bindings[9].param2 === param)) {
+                        targetKnobIdx = 9;
+                    }
+                    if (layer.bindings[10] && (layer.bindings[10].param1 === param || layer.bindings[10].param2 === param)) {
+                        targetKnobIdx = 10;
+                    }
+                }
+            }
+
+            // Fallback for hardcoded original bindings if not connected or not parsed
+            if (code === "AudioVolumeMute") targetKnobIdx = 9;
+            if (code === "MediaPlayPause") targetKnobIdx = 10;
+
+            if (targetKnobIdx !== -1) {
+                const el = document.getElementById(`physical_key_${targetKnobIdx}`);
+                if (el) {
+                    const knob = el.querySelector('.knob');
+                    if (knob) {
+                        knob.classList.remove('knob-pressed');
+                        el.classList.remove('pressed');
+                        let currentRotation = parseInt(knob.getAttribute('data-rotation') || '0');
+                        knob.style.transform = `rotate(${currentRotation}deg)`;
+                    }
+                }
+            }
+        });
+
+
+        function selectKnobTab(subIdx) {
+            knobActionSubIndex = subIdx;
+            document.querySelectorAll('.knob-tab').forEach((el, i) => {
+                el.classList.toggle('active', i === subIdx);
+            });
+            
+            const baseSlot = 50 + (activeLayer * 8) + (editingKeyIdx === 9 ? 0 : 4);
+            const currentSlot = baseSlot + subIdx;
+            
+            // Load saved keys from macroKeyParamsMap
+            const macroMap = JSON.parse(localStorage.getItem('zmk_macroKeyParamsMap') || '{}');
+            const savedKeys = macroMap[currentSlot];
+            
+            selectedVkKeys = [];
+            document.querySelectorAll('.vk-key.selected').forEach(el => el.classList.remove('selected'));
+            
+            if (savedKeys && savedKeys.length > 0) {
+                savedKeys.forEach(param => {
+                    // Quick fix: vk-key parameters are often in decimal but HTML onclick is also in decimal.
+                    // We must match exactly.
+                    const el = document.querySelector(`.vk-key[data-param="${param}"]`);
+                    if (el) {
+                        const label = el.textContent;
+                        selectedVkKeys.push({ param, label, element: el });
+                        el.classList.add('selected');
+                    }
+                });
+            }
+            
+            if (selectedVkKeys.length === 0) {
+                targetChip.innerHTML = '<span style="color: #666;">未选择</span>';
+            } else {
+                targetChip.innerHTML = selectedVkKeys.map(k => `<span class="mini-chip">${k.label}</span>`).join('<span style="color:#555;font-size:0.8rem;">+</span>');
+            }
+            updateActionBar();
+        }
+
+        function updateActionBar() {
+            const wrapper = document.getElementById('actionBarWrapper');
+            if (editingKeyIdx !== -1) {
+                if (wrapper) wrapper.style.width = '390px'; // 360px + 30px margin
+            } else {
+                if (wrapper) wrapper.style.width = '0';
+            }
+        }
+
+        function selectPhysicalKey(idx) {
+            document.querySelectorAll('.key.editing, .knob-container.editing').forEach(el => el.classList.remove('editing'));
+            
+            editingKeyIdx = idx;
+            const el = document.getElementById(`physical_key_${idx}`);
+            if (el) el.classList.add('editing');
+
+            const actionBarWrapper = document.getElementById('actionBarWrapper');
+            const actionBar = document.getElementById('actionBar');
+            
+            if (idx >= 9) {
+                actionBarWrapper.classList.add('right-side');
+                actionBar.classList.add('right-side', 'knob-mode');
+                sourceChip.textContent = `旋钮 ${idx === 9 ? '1 (左)' : '2 (右)'}`;
+                selectKnobTab(0);
+                return;
+            } else {
+                actionBarWrapper.classList.remove('right-side');
+                actionBar.classList.remove('right-side', 'knob-mode');
+                sourceChip.textContent = `物理键 K${idx + 1}`;
+                knobActionSubIndex = -1;
+            }
+
+            const customNames = JSON.parse(localStorage.getItem('zmk_macroCustomNames') || '{}');
+            let currentSlot = -1;
+            if (activeKeymap && activeKeymap.layers[activeLayer]) {
+                const b = activeKeymap.layers[activeLayer].bindings[idx];
+                if (b && typeof dynMacroBehaviorId !== 'undefined' && b.behaviorId === dynMacroBehaviorId) {
+                    currentSlot = b.param1;
+                }
+            }
+            if (currentSlot !== -1) {
+                document.getElementById('macroNameInput').value = customNames[currentSlot] || '';
+            } else {
+                document.getElementById('macroNameInput').value = '';
+            }
+            
+            // Re-load normal key's selected keys from physical layout
+            selectedVkKeys = [];
+            document.querySelectorAll('.vk-key.selected').forEach(el => el.classList.remove('selected'));
+            if (currentSlot !== -1) {
+                const macroMap = JSON.parse(localStorage.getItem('zmk_macroKeyParamsMap') || '{}');
+                const savedKeys = macroMap[currentSlot];
+                if (savedKeys && savedKeys.length > 0) {
+                    savedKeys.forEach(param => {
+                        const el = document.querySelector(`.vk-key[data-param="${param}"]`);
+                        if (el) {
+                            const label = el.textContent;
+                            selectedVkKeys.push({ param, label, element: el });
+                            el.classList.add('selected');
+                        }
+                    });
+                }
+            }
+            
+            if (selectedVkKeys.length === 0) {
+                targetChip.innerHTML = '<span style="color: #666;">未选择</span>';
+                document.getElementById('macroSettings').style.display = 'none';
+            } else if (selectedVkKeys.length === 1) {
+                targetChip.innerHTML = `<span class="mini-chip">${selectedVkKeys[0].label}</span>`;
+                document.getElementById('macroSettings').style.display = 'none';
+            } else {
+                targetChip.innerHTML = selectedVkKeys.map(k => `<span class="mini-chip">${k.label}</span>`).join('<span style="color:#555;font-size:0.8rem;">+</span>');
+                document.getElementById('macroSettings').style.display = 'block';
+            }
+            updateActionBar();
+        }
+
+        function selectVkKey(param, element, label) {
+            const existingIdx = selectedVkKeys.findIndex(k => k.param === param);
+            if (existingIdx !== -1) {
+                // Deselect
+                selectedVkKeys.splice(existingIdx, 1);
+                element.classList.remove('selected');
+            } else {
+                // Select
+                selectedVkKeys.push({ param, label, element });
+                element.classList.add('selected');
+                
+                // Cap at 16 keys (macro limit)
+                if (selectedVkKeys.length > 16) {
+                    const removed = selectedVkKeys.shift();
+                    removed.element.classList.remove('selected');
+                }
+            }
+            
+                        if (selectedVkKeys.length === 0) {
+                targetChip.innerHTML = '<span style="color: #666;">未选择</span>';
+                document.getElementById('macroSettings').style.display = 'none';
+            } else if (selectedVkKeys.length === 1) {
+                targetChip.innerHTML = `<span class="mini-chip">${selectedVkKeys[0].label}</span>`;
+                document.getElementById('macroSettings').style.display = 'none';
+            } else {
+                targetChip.innerHTML = selectedVkKeys.map(k => `<span class="mini-chip">${k.label}</span>`).join('<span style="color:#555;font-size:0.8rem;">+</span>');
+                document.getElementById('macroSettings').style.display = 'flex';
+            }
+            updateActionBar();
+        }
+
+        function clearSelection() {
+            selectedVkKeys = [];
+            document.querySelectorAll('.vk-key.selected').forEach(el => el.classList.remove('selected'));
+            document.querySelectorAll('.key.editing, .knob-container.editing').forEach(el => el.classList.remove('editing'));
+            editingKeyIdx = -1;
+            targetChip.innerHTML = '<span style="color: #666;">未选择</span>';
+            sourceChip.textContent = '未选择';
+            knobActionSubIndex = -1;
+            document.querySelectorAll('.knob-tab').forEach(el => el.classList.remove('active'));
+            updateActionBar();
+        }
+
+        document.addEventListener('click', (e) => {
+            // Check if we are clicking outside the interactive areas
+            if (!e.target.closest('#macropad') && 
+                !e.target.closest('#actionBar') && 
+                !e.target.closest('#vkSection') &&
+                !e.target.closest('.action-chip')) {
+                clearSelection();
+            }
+        });
+
+        document.getElementById('confirmBindingBtn').addEventListener('click', async () => {
+            try {
+                if (editingKeyIdx === -1) return;
+                
+                if (editingKeyIdx >= 9) {
+                    // Knob handling
+                    const targetSlot = 50 + (activeLayer * 8) + (editingKeyIdx === 9 ? 0 : 4) + knobActionSubIndex;
+                    const len = selectedVkKeys.length;
+                    const finalMode = 0; // Always use simultaneous mode for knob shortcuts so Ctrl+C etc work
+                    
+                    let payload = [0x00, 0x00, 0xBB, targetSlot, finalMode, len];
+                    const paramsList = [];
+                    for (let i = 0; i < len; i++) {
+                        const p = selectedVkKeys[i].param;
+                        paramsList.push(p);
+                        payload.push((p >>> 24) & 0xFF);
+                        payload.push((p >>> 16) & 0xFF);
+                        payload.push((p >>> 8) & 0xFF);
+                        payload.push(p & 0xFF);
+                    }
+                    payload.push(0xBD);
+                    
+                    const buffer = new Uint8Array(payload);
+                    if (serialWriter) {
+                        await serialWriter.write(buffer);
+                        
+                        const macroMap = JSON.parse(localStorage.getItem('zmk_macroKeyParamsMap') || '{}');
+                        macroMap[targetSlot] = paramsList;
+                        localStorage.setItem('zmk_macroKeyParamsMap', JSON.stringify(macroMap));
+                    }
+                    
+                    setStatus('配置已保存 (旋转/按压动作)', true);
+                    setTimeout(() => setStatus('已连接', true), 2000);
+                    return; // Keep UI open for knobs so they can configure other tabs
+                }
+
+                setStatus('正在保存映射...', true);
+
+                if (selectedVkKeys.length === 0) {
+                    let behaviorId = transBehaviorId !== -1 ? transBehaviorId : (kpBehaviorId !== -1 ? kpBehaviorId : 24);
+                    const oldB = activeKeymap.layers[activeLayer].bindings[editingKeyIdx];
+                    if (oldB && typeof dynMacroBehaviorId !== 'undefined' && oldB.behaviorId === dynMacroBehaviorId) {
+                        const oldSlot = oldB.param1;
+                        const macroKeyParamsMap = JSON.parse(localStorage.getItem('zmk_macroKeyParamsMap') || '{}');
+                        if (macroKeyParamsMap[oldSlot]) {
+                            delete macroKeyParamsMap[oldSlot];
+                            localStorage.setItem('zmk_macroKeyParamsMap', JSON.stringify(macroKeyParamsMap));
+                        }
+                    }
+                    await sendSetBindingRequest(activeLayer, editingKeyIdx, behaviorId, 0);
+                    setStatus('按键已清空为未配置', true);
+                } else if (selectedVkKeys.length === 1) {
+                    // Single key -> Standard &kp
+                    setStatus('正在保存单键映射...', true);
+                    const finalParam = selectedVkKeys[0].param;
+                    let behaviorId = kpBehaviorId;
+                    if (typeof behaviorId === 'undefined' || behaviorId === -1 || behaviorId === dynMacroBehaviorId) {
+                        console.log("[DEBUG] kpBehaviorId was invalid! Falling back to ID 24 (common for Key Press). Please check logs.");
+                        behaviorId = 24; // Fallback to common key_press ID if all else fails
+                        // Or 0? Let's try to find it in the current layer mappings just in case!
+                        const layer = activeKeymap.layers[activeLayer];
+                        if (layer && layer.bindings) {
+                            for (let b of layer.bindings) {
+                                let bid = b.behaviorId || b.behavior_id;
+                                if (bid !== undefined && bid !== dynMacroBehaviorId) {
+                                    behaviorId = bid; // Best guess
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    const oldB = activeKeymap.layers[activeLayer].bindings[editingKeyIdx];
+                    if (oldB && typeof dynMacroBehaviorId !== 'undefined' && oldB.behaviorId === dynMacroBehaviorId) {
+                        const oldSlot = oldB.param1;
+                        const macroKeyParamsMap = JSON.parse(localStorage.getItem('zmk_macroKeyParamsMap') || '{}');
+                        if (macroKeyParamsMap[oldSlot]) {
+                            delete macroKeyParamsMap[oldSlot];
+                            localStorage.setItem('zmk_macroKeyParamsMap', JSON.stringify(macroKeyParamsMap));
+                        }
+                    }
+                    
+                    await sendSetBindingRequest(activeLayer, editingKeyIdx, behaviorId, finalParam);
+                    if (activeKeymap && activeKeymap.layers && activeKeymap.layers[activeLayer]) {
+                        activeKeymap.layers[activeLayer].bindings[editingKeyIdx] = { behaviorId: behaviorId, param1: finalParam, param2: 0 };
+                    }
+                    setStatus('单键映射已保存', true);
+                    setTimeout(() => setStatus('已连接', true), 2000);
+                } else {
+                    // Multiple keys -> Dynamic Simultaneous Macro (mode 0)
+                    if (typeof dynMacroBehaviorId === 'undefined' || dynMacroBehaviorId === -1) {
+                        alert('此固件不支持动态宏行为 (未找到 dynamic-macro)');
+                        clearSelection();
+                        return;
+                    }
+                    let targetSlot = -1;
+                    const b = activeKeymap.layers[activeLayer].bindings[editingKeyIdx];
+                    if (b && b.behaviorId === dynMacroBehaviorId) {
+                        targetSlot = b.param1; // Reuse existing slot
+                    } else {
+                        let usedSlots = new Set();
+                        activeKeymap.layers.forEach(l => {
+                            l.bindings.forEach(binding => {
+                                if (binding.behaviorId === dynMacroBehaviorId) {
+                                    usedSlots.add(binding.param1);
+                                }
+                            });
+                        });
+                        for (let i = 0; i <= 49; i++) {
+                            if (!usedSlots.has(i)) {
+                                targetSlot = i;
+                                break;
+                            }
+                        }
+                        if (targetSlot === -1) {
+                            alert("硬件宏槽位 (0-49) 已分配完毕。请先将其他层的宏按键改回普通按键后再试。");
+                            clearSelection();
+                            return;
+                        }
+                    }
+                    
+                    const len = selectedVkKeys.length;
+                    const modeVal = parseInt(document.getElementById('macroModeSelect').value || "0");
+                    const customName = document.getElementById('macroNameInput').value.trim();
+                    const customNames = JSON.parse(localStorage.getItem('zmk_macroCustomNames') || '{}');
+                    if (customName) {
+                        customNames[targetSlot] = customName;
+                    } else {
+                        delete customNames[targetSlot];
+                    }
+                    localStorage.setItem('zmk_macroCustomNames', JSON.stringify(customNames));
+                    let payload = [0x00, 0x00, 0xBB, targetSlot, modeVal, len]; // 0 is Simultaneous Mode, 1 is Sequence
+                    const paramsList = [];
+                    for (let i = 0; i < len; i++) {
+                        const p = selectedVkKeys[i].param;
+                        paramsList.push(p);
+                        payload.push((p >>> 24) & 0xFF);
+                        payload.push((p >>> 16) & 0xFF);
+                        payload.push((p >>> 8) & 0xFF);
+                        payload.push(p & 0xFF);
+                    }
+                    payload.push(0xBD);
+                    
+                    const buffer = new Uint8Array(payload);
+                    if (serialWriter) {
+                        await serialWriter.write(buffer);
+
+                        await sendSetBindingRequest(activeLayer, editingKeyIdx, dynMacroBehaviorId, targetSlot);
+                        if (activeKeymap && activeKeymap.layers && activeKeymap.layers[activeLayer]) {
+                            activeKeymap.layers[activeLayer].bindings[editingKeyIdx] = { behaviorId: dynMacroBehaviorId, param1: targetSlot, param2: 0 };
+                        }
+
+                        const macroKeyParamsMap = JSON.parse(localStorage.getItem('zmk_macroKeyParamsMap') || '{}');
+                        macroKeyParamsMap[targetSlot] = paramsList;
+                        localStorage.setItem('zmk_macroKeyParamsMap', JSON.stringify(macroKeyParamsMap));
+                    }
+                    setStatus('宏按键已保存', true);
+                    setTimeout(() => setStatus('已连接', true), 2000);
+                }
+                
+                // Clean up UI
+                clearSelection();
+                updateKeyLabels();
+            } catch (error) {
+                alert("保存失败，发生内部错误：" + error.message);
+                console.error(error);
+            }
+        });
+
+    async function sendSetBindingRequest(layerId, keyPosition, behaviorId, param1) {
+            try {
+                console.log(`[DEBUG] sendSetBindingRequest: layer=${layerId}, pos=${keyPosition}, behaviorId=${behaviorId}, param1=${param1}`);
+                document.getElementById('debug_info').innerText = `[DEBUG] Sending behaviorId: ${behaviorId}, param: ${param1} (kpBehaviorId=${kpBehaviorId}, dynMacroBehaviorId=${dynMacroBehaviorId})`;
+                
+                if (behaviorId === dynMacroBehaviorId) {
+                    console.log(`[DEBUG] WARNING: Sending MACRO behavior ID ${behaviorId} to position ${keyPosition}!`);
+                }
+
+                const payload = { requestId: requestIdCounter++ };
+                payload.keymap = {
+                    setLayerBinding: {
+                        layerId: layerId,
+                        keyPosition: keyPosition,
+                        binding: {
+                            behaviorId: behaviorId,
+                            param1: param1,
+                            param2: 0
+                        }
+                    }
+                };
+                const message = zmkStudioMessage.create(payload);
+                const buffer = zmkStudioMessage.encode(message).finish();
+                const framedBuffer = frameData(buffer);
+                
+                if (serialWriter) {
+                    await serialWriter.write(framedBuffer);
+                }
+            } catch (error) {
+                console.error("发送 setLayerBinding 请求失败:", error);
+            }
+        }
+
+        async function sendSaveChangesRequest() {
+            await sendRpcRequest('keymap', 'saveChanges');
+        }
+
+        async function disconnectSerial() {
+            await sendRpcRequest('keymap', 'saveChanges');
+        }
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            const code = e.code || e.key;
+
+            let targetKnobIdx = -1;
+            let isRotation = false;
+            let rotationDelta = 0;
+            let isPress = false;
+
+            // 旋钮的旋转(Sensor bindings)在我们的 UI 中不可编辑，所以仍然硬编码匹配
+            if (code === "AudioVolumeUp" || code === "VolumeUp") { targetKnobIdx = 9; isRotation = true; rotationDelta = 18; }
+            if (code === "AudioVolumeDown" || code === "VolumeDown") { targetKnobIdx = 9; isRotation = true; rotationDelta = -18; }
+            if (code === "PageUp") { targetKnobIdx = 10; isRotation = true; rotationDelta = -18; }
+            if (code === "PageDown") { targetKnobIdx = 10; isRotation = true; rotationDelta = 18; }
+
+            // 旋钮的按下是矩阵按键(9和10)，支持用户动态改键，所以去 activeKeymap 里查
+            const param = CODE_TO_ZMK_PARAM[code];
+            
+            // --- 全键盘 (Virtual Keyboard) 按键高亮联动 ---
+            if (param !== undefined) {
+                // 在全键盘面板中寻找对应的按键并点亮
+                const vkKeys = document.querySelectorAll(`.vk-key[data-param="${param}"]`);
+                vkKeys.forEach(vk => vk.classList.add('pressed'));
+            }
+            // ---------------------------------------------
+
+            if (param !== undefined && activeKeymap && activeKeymap.layers && activeKeymap.layers.length > 0) {
+                const layer = activeKeymap.layers[activeLayer];
+                if (layer && layer.bindings) {
+                    if (layer.bindings[9] && (layer.bindings[9].param1 === param || layer.bindings[9].param2 === param)) {
+                        targetKnobIdx = 9;
+                        isPress = true;
+                    }
+                    if (layer.bindings[10] && (layer.bindings[10].param1 === param || layer.bindings[10].param2 === param)) {
+                        targetKnobIdx = 10;
+                        isPress = true;
+                    }
+                }
+            }
+
+            if (targetKnobIdx === -1) return;
+
+            if (targetKnobIdx !== -1) {
+                const el = document.getElementById(`physical_key_${targetKnobIdx}`);
+                if (el) {
+                    const knob = el.querySelector('.knob');
+                    if (knob) {
+                        let currentRotation = parseInt(knob.getAttribute('data-rotation') || '0');
+                        if (isRotation) {
+                            currentRotation += rotationDelta;
+                            knob.setAttribute('data-rotation', currentRotation);
+                        }
+                        // 如果同时有旋转和按下（比如按住旋转），先旋转再缩放
+                        let transformStr = `rotate(${currentRotation}deg)`;
+                        if (isPress || knob.classList.contains('knob-pressed')) {
+                            transformStr += ' scale(0.85)';
+                        }
+                        if (isPress) {
+                            knob.classList.add('knob-pressed');
+                            // 给底座也加一点效果
+                            el.classList.add('pressed');
+                        }
+                        knob.style.transform = transformStr;
+                    }
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const code = e.code || e.key;
+            
+            let targetKnobIdx = -1;
+
+            const param = CODE_TO_ZMK_PARAM[code];
+            
+            // --- 全键盘 (Virtual Keyboard) 按键释放联动 ---
+            if (param !== undefined) {
+                const vkKeys = document.querySelectorAll(`.vk-key[data-param="${param}"]`);
+                vkKeys.forEach(vk => vk.classList.remove('pressed'));
+            }
+            // ---------------------------------------------
+
+            if (param !== undefined && activeKeymap && activeKeymap.layers && activeKeymap.layers.length > 0) {
+                const layer = activeKeymap.layers[activeLayer];
+                if (layer && layer.bindings) {
+                    if (layer.bindings[9] && (layer.bindings[9].param1 === param || layer.bindings[9].param2 === param)) {
+                        targetKnobIdx = 9;
+                    }
+                    if (layer.bindings[10] && (layer.bindings[10].param1 === param || layer.bindings[10].param2 === param)) {
+                        targetKnobIdx = 10;
+                    }
+                }
+            }
+
+            // Fallback for hardcoded original bindings if not connected or not parsed
+            if (code === "AudioVolumeMute") targetKnobIdx = 9;
+            if (code === "MediaPlayPause") targetKnobIdx = 10;
+
+            if (targetKnobIdx !== -1) {
+                const el = document.getElementById(`physical_key_${targetKnobIdx}`);
+                if (el) {
+                    const knob = el.querySelector('.knob');
+                    if (knob) {
+                        knob.classList.remove('knob-pressed');
+                        el.classList.remove('pressed');
+                        let currentRotation = parseInt(knob.getAttribute('data-rotation') || '0');
+                        knob.style.transform = `rotate(${currentRotation}deg)`;
+                    }
+                }
+            }
+        });
+
+
+
+        // --- Log Serial Port Handlers ---
+        let logSerialPort;
+        let logSerialReader;
+        let keepReadingLog = true;
+
+        document.getElementById('clearLogBtn').addEventListener('click', () => {
+            document.getElementById('serialLogOutput').value = '';
+        });
+
+        document.getElementById('connectLogBtn').addEventListener('click', async () => {
+            if (!navigator.serial) {
+                alert('您的浏览器不支持 Web Serial API。');
+                return;
+            }
+            try {
+                logSerialPort = await navigator.serial.requestPort();
+                await logSerialPort.open({ baudRate: 115200 });
+                document.getElementById('connectLogBtn').style.display = 'none';
+                document.getElementById('disconnectLogBtn').style.display = 'inline-block';
+                document.getElementById('serialLogOutput').value += "--- 已连接到日志串口 ---\n";
+                
+                keepReadingLog = true;
+                logSerialReader = logSerialPort.readable.getReader();
+                readLogLoop();
+            } catch (err) {
+                console.error(err);
+                alert('连接日志串口失败');
+            }
+        });
+
+        document.getElementById('disconnectLogBtn').addEventListener('click', async () => {
+            keepReadingLog = false;
+            if (logSerialReader) {
+                await logSerialReader.cancel();
+            }
+        });
+
+        async function readLogLoop() {
+            const decoder = new TextDecoder();
+            try {
+                while (keepReadingLog) {
+                    const { value, done } = await logSerialReader.read();
+                    if (done) break;
+                    if (value) {
+                        let text = decoder.decode(value);
+                        let logArea = document.getElementById('serialLogOutput');
+                        logArea.value += text;
+                        logArea.scrollTop = logArea.scrollHeight;
+                    }
+                }
+            } catch (error) {
+                console.error("Log 读取错误:", error);
+            } finally {
+                logSerialReader.releaseLock();
+                await logSerialPort.close();
+                document.getElementById('connectLogBtn').style.display = 'inline-block';
+                document.getElementById('disconnectLogBtn').style.display = 'none';
+                document.getElementById('serialLogOutput').value += "\n--- 已断开日志串口 ---\n";
+            }
+        }
+    </script>
+    <div class="modal-overlay" id="lightingPreviewModal" style="display: none; z-index: 2000;">
+        <div class="lighting-panel" style="position: relative; padding: 30px; display: flex; flex-direction: column; align-items: center; background: rgba(20, 20, 20, 0.95);">
+            <div class="control-btn close" id="closeLightingPreview" style="position: absolute; top: 10px; right: 10px; border-radius: 4px; cursor: pointer; width: 32px; height: 32px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </div>
+            <h3 style="margin-bottom: 20px; color: var(--accent);" id="previewEffectName">动效预览</h3>
+            
+            <div class="macropad" style="position: relative; width: 240px; height: 240px; background: #111; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.1); display: block;">
+                <!-- 3x3 keys -->
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 20px; top: 20px;"></div>
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 90px; top: 20px;"></div>
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 160px; top: 20px;"></div>
+                
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 20px; top: 90px;"></div>
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 90px; top: 90px;"></div>
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 160px; top: 90px;"></div>
+                
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 20px; top: 160px;"></div>
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 90px; top: 160px;"></div>
+                <div class="key preview-key" style="width: 60px; height: 60px; left: 160px; top: 160px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('closeLightingPreview')?.addEventListener('click', () => {
+            document.getElementById('lightingPreviewModal').style.display = 'none';
+        });
+    </script>
+    
+</body>
+</html>
